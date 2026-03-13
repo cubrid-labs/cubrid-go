@@ -1,8 +1,21 @@
 # cubrid-go
 
-Pure-Go CUBRID database driver for Go's `database/sql` package and [GORM](https://gorm.io).
+A pure-Go `database/sql` driver and GORM dialector for [CUBRID](https://www.cubrid.org) databases.
 
-Ported from [pycubrid](https://github.com/cubrid-labs/pycubrid) — no CGO, no native libraries required.
+## Features
+
+- Pure Go — no CGO, no Java, no CUBRID client library required
+- Implements the `database/sql/driver` standard interface
+- GORM dialector included (`dialector/` sub-package)
+- Typed bind parameters sent over the wire (no string interpolation)
+- Prepared statement reuse via server-side handles
+- Transaction support (commit / rollback)
+- Server-side cursor with configurable fetch size
+
+## Requirements
+
+- Go 1.21+
+- CUBRID 10.x or 11.x server
 
 ## Installation
 
@@ -13,18 +26,20 @@ go get github.com/cubrid-labs/cubrid-go
 ## DSN Format
 
 ```
-cubrid://[user[:password]]@host[:port]/database[?autocommit=true&timeout=30s]
+cubrid://[user[:password]]@host[:port]/database[?param=value&...]
 ```
 
-| Parameter    | Default     | Description                         |
-|--------------|-------------|-------------------------------------|
-| `host`       | `localhost` | CUBRID broker host                  |
-| `port`       | `33000`     | CUBRID broker port                  |
-| `database`   | (required)  | Target database name                |
-| `user`       | (empty)     | Database user                       |
-| `password`   | (empty)     | Database password                   |
-| `autocommit` | `true`      | Enable/disable auto-commit          |
-| `timeout`    | `30s`       | Connection timeout (Go duration)    |
+| Parameter    | Default | Description                      |
+|--------------|---------|----------------------------------|
+| `autocommit` | `true`  | Enable/disable auto-commit mode  |
+| `timeout`    | `30s`   | Connection and I/O deadline      |
+
+**Examples:**
+
+```
+cubrid://dba:@localhost:33000/demodb
+cubrid://admin:secret@db.example.com:33000/mydb?autocommit=false&timeout=10s
+```
 
 ## Usage with `database/sql`
 
@@ -36,11 +51,29 @@ import (
 
 db, err := sql.Open("cubrid", "cubrid://dba:@localhost:33000/demodb")
 if err != nil {
-    panic(err)
+    log.Fatal(err)
 }
 defer db.Close()
 
-rows, err := db.Query("SELECT * FROM athlete WHERE nation_code = ?", "KOR")
+// Query
+rows, err := db.Query("SELECT id, name FROM users WHERE active = ?", 1)
+defer rows.Close()
+for rows.Next() {
+    var id int
+    var name string
+    rows.Scan(&id, &name)
+}
+
+// Exec
+res, err := db.Exec("INSERT INTO users (name) VALUES (?)", "Alice")
+id, _       := res.LastInsertId()
+affected, _ := res.RowsAffected()
+
+// Transaction
+tx, _ := db.Begin()
+tx.Exec("UPDATE accounts SET balance = balance - ? WHERE id = ?", 100, 1)
+tx.Exec("UPDATE accounts SET balance = balance + ? WHERE id = ?", 100, 2)
+tx.Commit()
 ```
 
 ## Usage with GORM
@@ -53,82 +86,110 @@ import (
 
 db, err := gorm.Open(cubrid.Open("cubrid://dba:@localhost:33000/demodb"), &gorm.Config{})
 if err != nil {
-    panic(err)
+    log.Fatal(err)
 }
 
-// Define a model.
-type Athlete struct {
-    Code       int    `gorm:"primaryKey;autoIncrement"`
-    Name       string `gorm:"size:40;not null"`
-    NationCode string `gorm:"size:3"`
-    Gender     string `gorm:"size:1"`
-    Event      string `gorm:"size:40"`
+// AutoMigrate
+type User struct {
+    ID   uint   `gorm:"primaryKey;autoIncrement"`
+    Name string `gorm:"size:100"`
 }
+db.AutoMigrate(&User{})
 
-// Auto-migrate creates the table if it doesn't exist.
-db.AutoMigrate(&Athlete{})
+// CRUD
+db.Create(&User{Name: "Alice"})
 
-// Create
-db.Create(&Athlete{Name: "Hong Gildong", NationCode: "KOR", Gender: "M", Event: "Marathon"})
+var user User
+db.First(&user, 1)
 
-// Find
-var athletes []Athlete
-db.Where("nation_code = ?", "KOR").Find(&athletes)
-
-// Update
-db.Model(&Athlete{}).Where("name = ?", "Hong Gildong").Update("event", "Sprint")
-
-// Delete
-db.Delete(&Athlete{}, "nation_code = ?", "ZZZ")
+db.Model(&user).Update("Name", "Bob")
+db.Delete(&user)
 ```
 
-## Supported Features
+## Supported Data Types
 
-| Feature                         | Status |
-|---------------------------------|--------|
-| Pure TCP (no shared library)    | ✅     |
-| `database/sql` driver           | ✅     |
-| Parameterised queries (`?`)     | ✅     |
-| Transactions (`Begin/Commit/Rollback`) | ✅ |
-| GORM dialector                  | ✅     |
-| GORM AutoMigrate                | ✅     |
-| Server-side cursor / lazy fetch | ✅     |
-| Result streaming (FETCH)        | ✅     |
-| Last insert ID                  | ✅     |
-| Connection pool (via `database/sql`) | ✅ |
-| LOB (BLOB/CLOB)                 | ⚠️ raw bytes only |
-| Timezone-aware types            | ⚠️ UTC only       |
+| CUBRID Type           | Go Type     |
+|-----------------------|-------------|
+| `SMALLINT`            | `int64`     |
+| `INTEGER`             | `int64`     |
+| `BIGINT`              | `int64`     |
+| `FLOAT`               | `float64`   |
+| `DOUBLE`, `MONETARY`  | `float64`   |
+| `NUMERIC`             | `string`    |
+| `CHAR`, `VARCHAR`     | `string`    |
+| `NCHAR`, `NVARCHAR`   | `string`    |
+| `ENUM`                | `string`    |
+| `DATE`                | `time.Time` |
+| `TIME`                | `time.Time` |
+| `TIMESTAMP`           | `time.Time` |
+| `DATETIME`            | `time.Time` |
+| `BIT`, `BIT VARYING`  | `[]byte`    |
+| `BLOB`, `CLOB`        | `[]byte`    |
+| `NULL`                | `nil`       |
 
-## Architecture
+## Error Handling
+
+Three exported error types allow callers to handle different failure categories:
+
+```go
+import "errors"
+import cubrid "github.com/cubrid-labs/cubrid-go"
+
+if err != nil {
+    var intErr  *cubrid.IntegrityError    // unique key, foreign key violation
+    var progErr *cubrid.ProgrammingError  // syntax error, table not found
+    var opErr   *cubrid.OperationalError  // network or server-side failure
+
+    switch {
+    case errors.As(err, &intErr):
+        fmt.Println("constraint violation:", intErr.Code, intErr.Message)
+    case errors.As(err, &progErr):
+        fmt.Println("programming error:", progErr.Message)
+    case errors.As(err, &opErr):
+        fmt.Println("operational error:", opErr.Message)
+    }
+}
+```
+
+## Running Tests
+
+**Unit tests** (no CUBRID server required):
+
+```bash
+go test ./...
+```
+
+**Integration tests** (requires a running CUBRID server):
+
+```bash
+CUBRID_DSN=cubrid://dba:@localhost:33000/demodb go test -tags integration ./...
+```
+
+## Project Structure
 
 ```
 cubrid-go/
-├── constants.go   CAS protocol constants (function codes, data types, …)
-├── packet.go      PacketWriter / PacketReader — big-endian binary codec
-├── protocol.go    High-level packet builders and parsers
-├── errors.go      CubridError, IntegrityError, ProgrammingError
-├── types.go       Client-side parameter interpolation
-├── conn.go        TCP connection + broker handshake
-├── stmt.go        database/sql Stmt — PrepareAndExecute
-├── rows.go        database/sql Rows — lazy server-side cursor
-├── tx.go          database/sql Tx — COMMIT / ROLLBACK
-├── driver.go      Driver registration + DSN parser
+├── driver.go       # Driver registration, DSN parsing
+├── conn.go         # TCP connection, handshake, database/sql Conn interface
+├── stmt.go         # Prepared statement (Stmt interface)
+├── rows.go         # Result rows with server-side cursor fetch
+├── tx.go           # Transaction (commit / rollback)
+├── packet.go       # Binary serializer / deserializer (big-endian)
+├── protocol.go     # CAS broker wire protocol (FC=2,3,6,8,15,31,40,41)
+├── errors.go       # Exported error types
+├── constants.go    # Protocol constants (function codes, data types, sizes)
+├── types.go        # SQL value formatting utilities
 └── dialector/
-    └── cubrid.go  GORM Dialector + Migrator
+    └── cubrid.go   # GORM dialector + migrator
 ```
 
-## Protocol Notes
+## Contributing
 
-cubrid-go speaks the CUBRID CAS (Client Application Server) protocol directly over TCP.
-The two-step connection sequence is:
-
-1. **Broker handshake** — connect to `host:port`, send a 10-byte magic string,
-   receive a redirected CAS port.
-2. **Open database** — connect to the CAS port, send credentials (628 bytes),
-   receive session info.
-
-All subsequent requests use the `PREPARE_AND_EXECUTE` (function code 41) combined
-packet, and large result sets are streamed back via `FETCH` (function code 8).
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feat/my-feature`
+3. Write tests for new functionality
+4. Ensure `go test ./...` passes
+5. Open a pull request
 
 ## License
 
