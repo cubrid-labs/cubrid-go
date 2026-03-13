@@ -97,9 +97,9 @@ const (
 
 // Protocol constants (pycubrid CASProtocol)
 const (
-	MagicString = "CUBRK"
-	ClientJDBC  = 3
-	CASVersion  = 0x47
+	MagicString  = "CUBRK"
+	ClientJDBC   = 3
+	CASVersion   = 0x47
 	ProtoVersion = 7
 )
 

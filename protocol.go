@@ -153,7 +153,7 @@ func parseRowData(
 	isCallType := stmtType == StmtCallSP
 	rows := make([][]interface{}, 0, tupleCount)
 	for i := 0; i < tupleCount; i++ {
-		reader.parseInt()              // row index
+		reader.parseInt()             // row index
 		reader.parseRawBytes(SizeOID) // OID
 
 		row := make([]interface{}, len(columns))
@@ -286,13 +286,13 @@ func WritePrepareAndExecute(sql string, autoCommit bool, casInfo [SizeCASInfo]by
 		w.addByte(0)
 	}
 	w.addByte(ExecuteQueryAll)
-	w.addInt(0)      // max_col_size
-	w.addInt(0)      // max_row_size
-	w.writeInt(0)    // NULL (bind params)
+	w.addInt(0)          // max_col_size
+	w.addInt(0)          // max_row_size
+	w.writeInt(0)        // NULL (bind params)
 	w.writeInt(SizeLong) // cache time length
-	w.writeInt(0)    // cache time sec
-	w.writeInt(0)    // cache time usec
-	w.addInt(0)      // query timeout
+	w.writeInt(0)        // cache time sec
+	w.writeInt(0)        // cache time usec
+	w.addInt(0)          // query timeout
 	payload := w.toBytes()
 	return append(buildProtocolHeader(len(payload), casInfo), payload...)
 }
@@ -320,10 +320,10 @@ func ParsePrepareAndExecute(data []byte, protoVersion int) (*PrepareAndExecuteRe
 	}
 
 	res := &PrepareAndExecuteResult{QueryHandle: int(responseCode)}
-	reader.parseInt()                            // result cache lifetime
-	res.StatementType = int(reader.parseByte())  // statement type
-	res.BindCount = int(reader.parseInt())        // bind count
-	reader.parseByte()                            // is_updatable
+	reader.parseInt()                           // result cache lifetime
+	res.StatementType = int(reader.parseByte()) // statement type
+	res.BindCount = int(reader.parseInt())      // bind count
+	reader.parseByte()                          // is_updatable
 	colCount := int(reader.parseInt())
 	res.Columns = parseColumnMetadata(reader, colCount)
 
@@ -534,7 +534,7 @@ func WriteExecute(
 		}
 		return 0
 	}())
-	w.addByte(1)   // forward_only
+	w.addByte(1) // forward_only
 	w.addCacheTime()
 	w.addInt(0) // query timeout
 

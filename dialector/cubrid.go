@@ -28,8 +28,8 @@ import (
 
 // Dialector is the GORM dialector for CUBRID.
 type Dialector struct {
-	DSN        string
-	conn       gorm.ConnPool
+	DSN  string
+	conn gorm.ConnPool
 }
 
 // Open creates a new CUBRID dialector from a DSN string.
