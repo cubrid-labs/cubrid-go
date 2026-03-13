@@ -1,0 +1,157 @@
+# Contributing to cubrid-go
+
+Thank you for your interest in contributing! This document provides guidelines
+and instructions for contributing to the project.
+
+## Table of Contents
+
+- [Development Setup](#development-setup)
+- [Running Tests](#running-tests)
+- [Code Style](#code-style)
+- [Pull Request Guidelines](#pull-request-guidelines)
+- [Reporting Issues](#reporting-issues)
+
+---
+
+## Development Setup
+
+### Prerequisites
+
+- Go 1.21 or later
+- Git
+- Docker (for integration tests)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/cubrid-labs/cubrid-go.git
+cd cubrid-go
+
+# Download dependencies
+go mod download
+
+# Verify
+go vet ./...
+```
+
+---
+
+## Running Tests
+
+### Unit Tests
+
+```bash
+# Run tests (excluding integration)
+go test -v -short ./...
+
+# Run tests with coverage
+go test -v -short -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
+```
+
+### Integration Tests (Requires CUBRID)
+
+```bash
+# Start a CUBRID container
+docker compose up -d
+
+# Set the connection URL
+export CUBRID_TEST_DSN="CUBRID:localhost:33000:testdb:::"
+
+# Run integration tests
+go test -v -run Integration ./...
+
+# Stop the container when done
+docker compose down
+```
+
+---
+
+## Code Style
+
+This project follows standard Go conventions.
+
+### Tools
+
+- **Formatter**: `go fmt` / `gofmt`
+- **Linter**: `go vet`
+- **Static analysis**: [golangci-lint](https://golangci-lint.run/) (recommended)
+
+### Running Checks
+
+```bash
+# Format
+gofmt -w .
+
+# Vet
+go vet ./...
+
+# Lint (if golangci-lint is installed)
+golangci-lint run
+```
+
+### Conventions
+
+- Follow [Effective Go](https://go.dev/doc/effective_go)
+- Use meaningful variable and function names
+- Write godoc comments for exported types and functions
+- Keep functions small and focused
+
+---
+
+## Pull Request Guidelines
+
+### Before Submitting
+
+1. **Create a feature branch** from `main`:
+   ```bash
+   git checkout -b feature/my-feature main
+   ```
+
+2. **Write tests** for any new functionality.
+
+3. **Run the full test suite** and ensure all tests pass:
+   ```bash
+   make test
+   ```
+
+4. **Run lint checks**:
+   ```bash
+   make lint
+   ```
+
+### PR Content
+
+- Keep PRs focused — one feature or fix per PR.
+- Write a clear title and description explaining _what_ and _why_.
+- Reference any related issues (e.g., `Fixes #42`).
+- Update documentation if your change affects the public API.
+- Update `CHANGELOG.md` with a summary of your change.
+
+### Review Process
+
+- All PRs require at least one review before merge.
+- CI must pass (vet, tests).
+- Maintain backward compatibility unless explicitly approved.
+
+---
+
+## Reporting Issues
+
+When reporting a bug, please include:
+
+- Go version (`go version`)
+- CUBRID server version
+- cubrid-go version
+- Minimal reproduction code
+- Full error output
+
+For feature requests, describe the use case and expected behavior.
+
+---
+
+## Questions?
+
+Open a [GitHub Discussion](https://github.com/cubrid-labs/cubrid-go/discussions)
+or file an [issue](https://github.com/cubrid-labs/cubrid-go/issues).
