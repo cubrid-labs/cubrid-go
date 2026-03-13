@@ -37,7 +37,6 @@ func (c *conn) connect() error {
 		return &OperationalError{CubridError{Code: -1,
 			Message: fmt.Sprintf("dial broker %s: %v", brokerAddr, err)}}
 	}
-	defer brokerConn.Close()
 
 	if c.timeout > 0 {
 		brokerConn.SetDeadline(time.Now().Add(c.timeout))
@@ -45,26 +44,35 @@ func (c *conn) connect() error {
 
 	// Step 1: send ClientInfoExchange (10 bytes, no framing header).
 	if _, err = brokerConn.Write(WriteClientInfoExchange()); err != nil {
+		brokerConn.Close()
 		return err
 	}
 
 	// Step 2: receive the redirected CAS port (4 bytes).
 	portBuf := make([]byte, 4)
 	if _, err = io.ReadFull(brokerConn, portBuf); err != nil {
+		brokerConn.Close()
 		return err
 	}
 	newPort := int(int32(binary.BigEndian.Uint32(portBuf)))
 	if newPort < 0 {
+		brokerConn.Close()
 		return &OperationalError{CubridError{Code: newPort,
 			Message: "broker rejected connection"}}
 	}
 
-	// Step 3: connect to the CAS port returned by the broker.
-	casAddr := fmt.Sprintf("%s:%d", c.host, newPort)
-	c.socket, err = net.DialTimeout("tcp", casAddr, c.timeout)
-	if err != nil {
-		return &OperationalError{CubridError{Code: -1,
-			Message: fmt.Sprintf("dial CAS %s: %v", casAddr, err)}}
+	// Step 3: if port > 0, connect to the new CAS port; if 0, reuse the broker socket.
+	if newPort > 0 {
+		brokerConn.Close()
+		casAddr := fmt.Sprintf("%s:%d", c.host, newPort)
+		c.socket, err = net.DialTimeout("tcp", casAddr, c.timeout)
+		if err != nil {
+			return &OperationalError{CubridError{Code: -1,
+				Message: fmt.Sprintf("dial CAS %s: %v", casAddr, err)}}
+		}
+	} else {
+		// Port 0 means the CAS is on the same connection.
+		c.socket = brokerConn
 	}
 
 	if c.timeout > 0 {
@@ -100,7 +108,7 @@ func (c *conn) send(data []byte) error {
 	return err
 }
 
-// recv reads a length-framed response: 4-byte DATA_LENGTH then that many bytes.
+// recv reads a length-framed response: 4-byte DATA_LENGTH, then CAS_INFO + body.
 func (c *conn) recv() ([]byte, error) {
 	lenBuf := make([]byte, SizeDataLength)
 	if _, err := io.ReadFull(c.socket, lenBuf); err != nil {
@@ -108,7 +116,10 @@ func (c *conn) recv() ([]byte, error) {
 	}
 	dataLen := int(binary.BigEndian.Uint32(lenBuf))
 
-	data := make([]byte, dataLen)
+	// CUBRID wire: [DATA_LENGTH][CAS_INFO (4 bytes)][body (DATA_LENGTH bytes)]
+	// Read CAS_INFO + body together.
+	totalLen := dataLen + SizeCASInfo
+	data := make([]byte, totalLen)
 	if _, err := io.ReadFull(c.socket, data); err != nil {
 		return nil, err
 	}
@@ -147,27 +158,29 @@ func (c *conn) execSQL(sql string) (*PrepareAndExecuteResult, error) {
 	return ParsePrepareAndExecute(resp, c.protoVer)
 }
 
-// fetchLastInsertID retrieves the last auto-generated ID via FC=40.
-// Called by stmt.Exec() after a successful INSERT.
+// fetchLastInsertID retrieves the last auto-generated ID via SQL.
+// FC=40 (GET_LAST_INSERT_ID) is unreliable; using SELECT LAST_INSERT_ID() instead.
 func (c *conn) fetchLastInsertID() int64 {
-	req := WriteGetLastInsertId(c.casInfo)
-	resp, err := c.sendAndRecv(req)
-	if err != nil {
+	res, err := c.execSQL("SELECT LAST_INSERT_ID()")
+	if err != nil || len(res.Rows) == 0 || len(res.Rows[0]) == 0 {
 		return 0
 	}
-	idStr, err := ParseGetLastInsertId(resp)
-	if err != nil || idStr == "" {
-		return 0
-	}
-	var n int64
-	for _, ch := range idStr {
-		if ch >= '0' && ch <= '9' {
-			n = n*10 + int64(ch-'0')
-		} else {
-			break
+	switch v := res.Rows[0][0].(type) {
+	case int64:
+		return v
+	case string:
+		var n int64
+		for _, ch := range v {
+			if ch >= '0' && ch <= '9' {
+				n = n*10 + int64(ch-'0')
+			} else {
+				break
+			}
 		}
+		return n
+	default:
+		return 0
 	}
-	return n
 }
 
 // ─── driver.Conn ──────────────────────────────────────────────────────────────

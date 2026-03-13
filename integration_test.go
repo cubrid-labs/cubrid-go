@@ -1,0 +1,150 @@
+package cubrid
+
+import (
+	"database/sql"
+	"fmt"
+	"testing"
+)
+
+// TestDatabaseSQLIntegration tests the full database/sql driver flow.
+func TestDatabaseSQLIntegration(t *testing.T) {
+	db, err := sql.Open("cubrid", "cubrid://dba:@localhost:33000/testdb?autocommit=true")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer db.Close()
+
+	// Ping
+	if err := db.Ping(); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+	t.Log("Ping OK")
+
+	// Simple query
+	var result int
+	err = db.QueryRow("SELECT 1+1 AS val").Scan(&result)
+	if err != nil {
+		t.Fatalf("QueryRow: %v", err)
+	}
+	if result != 2 {
+		t.Fatalf("expected 2, got %d", result)
+	}
+	t.Logf("SELECT 1+1 = %d", result)
+
+	// DDL
+	_, err = db.Exec("DROP TABLE IF EXISTS go_test_basic")
+	if err != nil {
+		t.Fatalf("DROP TABLE: %v", err)
+	}
+	_, err = db.Exec("CREATE TABLE go_test_basic (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100), age INT)")
+	if err != nil {
+		t.Fatalf("CREATE TABLE: %v", err)
+	}
+	defer db.Exec("DROP TABLE IF EXISTS go_test_basic")
+	t.Log("CREATE TABLE OK")
+
+	// INSERT
+	res, err := db.Exec("INSERT INTO go_test_basic (name, age) VALUES (?, ?)", "Alice", 30)
+	if err != nil {
+		t.Fatalf("INSERT: %v", err)
+	}
+	lastID, _ := res.LastInsertId()
+	rowsAffected, _ := res.RowsAffected()
+	if lastID != 1 {
+		t.Fatalf("expected lastInsertId=1, got %d", lastID)
+	}
+	if rowsAffected != 1 {
+		t.Fatalf("expected rowsAffected=1, got %d", rowsAffected)
+	}
+	t.Logf("INSERT: lastID=%d, rowsAffected=%d", lastID, rowsAffected)
+
+	res, err = db.Exec("INSERT INTO go_test_basic (name, age) VALUES (?, ?)", "Bob", 25)
+	if err != nil {
+		t.Fatalf("INSERT 2: %v", err)
+	}
+
+	// SELECT multiple rows
+	rows, err := db.Query("SELECT id, name, age FROM go_test_basic ORDER BY id")
+	if err != nil {
+		t.Fatalf("SELECT: %v", err)
+	}
+	defer rows.Close()
+
+	var count int
+	for rows.Next() {
+		var id, age int
+		var name string
+		if err := rows.Scan(&id, &name, &age); err != nil {
+			t.Fatalf("Scan: %v", err)
+		}
+		t.Logf("  Row: id=%d, name=%s, age=%d", id, name, age)
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows.Err: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 rows, got %d", count)
+	}
+
+	// UPDATE
+	res, err = db.Exec("UPDATE go_test_basic SET age = ? WHERE name = ?", 31, "Alice")
+	if err != nil {
+		t.Fatalf("UPDATE: %v", err)
+	}
+	affected, _ := res.RowsAffected()
+	t.Logf("UPDATE: rowsAffected=%d", affected)
+
+	// Verify update
+	var updatedAge int
+	err = db.QueryRow("SELECT age FROM go_test_basic WHERE name = ?", "Alice").Scan(&updatedAge)
+	if err != nil {
+		t.Fatalf("SELECT after UPDATE: %v", err)
+	}
+	if updatedAge != 31 {
+		t.Fatalf("expected age 31, got %d", updatedAge)
+	}
+
+	// DELETE
+	res, err = db.Exec("DELETE FROM go_test_basic WHERE name = ?", "Bob")
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	affected, _ = res.RowsAffected()
+	t.Logf("DELETE: rowsAffected=%d", affected)
+
+	// Verify count
+	var finalCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM go_test_basic").Scan(&finalCount)
+	if err != nil {
+		t.Fatalf("COUNT: %v", err)
+	}
+	if finalCount != 1 {
+		t.Fatalf("expected 1 row remaining, got %d", finalCount)
+	}
+
+	// Transaction test
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	_, err = tx.Exec("INSERT INTO go_test_basic (name, age) VALUES (?, ?)", "Charlie", 35)
+	if err != nil {
+		t.Fatalf("tx INSERT: %v", err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+
+	// Verify rollback
+	err = db.QueryRow("SELECT COUNT(*) FROM go_test_basic").Scan(&finalCount)
+	if err != nil {
+		t.Fatalf("COUNT after rollback: %v", err)
+	}
+	if finalCount != 1 {
+		t.Fatalf("expected 1 row after rollback, got %d", finalCount)
+	}
+	t.Log("Transaction rollback verified")
+
+	fmt.Println("All database/sql integration tests PASSED!")
+}

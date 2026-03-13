@@ -66,12 +66,33 @@ const (
 
 // Statement types (pycubrid CUBRIDStatementType)
 const (
-	StmtSelect  = 1
-	StmtInsert  = 2
-	StmtUpdate  = 3
-	StmtDelete  = 4
-	StmtCallSP  = 0x7E
-	StmtUnknown = 0x7F
+	StmtAlterClass    = 0
+	StmtAlterSerial   = 1
+	StmtCommitWork    = 2
+	StmtRegisterDB    = 3
+	StmtCreateClass   = 4
+	StmtCreateIndex   = 5
+	StmtCreateTrigger = 6
+	StmtCreateSerial  = 7
+	StmtDropDatabase  = 8
+	StmtDropClass     = 9
+	StmtDropIndex     = 10
+	StmtDropLabel     = 11
+	StmtDropTrigger   = 12
+	StmtDropSerial    = 13
+	StmtEvaluate      = 14
+	StmtRenameClass   = 15
+	StmtRollbackWork  = 16
+	StmtGrant         = 17
+	StmtRevoke        = 18
+	StmtStatistics    = 19
+	StmtInsert        = 20
+	StmtSelect        = 21
+	StmtUpdate        = 22
+	StmtDelete        = 23
+	StmtCall          = 24
+	StmtCallSP        = 0x7E
+	StmtUnknown       = 0x7F
 )
 
 // Protocol constants (pycubrid CASProtocol)

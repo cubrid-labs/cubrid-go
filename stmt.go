@@ -37,7 +37,10 @@ func (s *stmt) Close() error {
 func (s *stmt) NumInput() int { return s.bindCount }
 
 // Exec executes a non-SELECT (or any) statement with the given arguments.
-// Parameters are sent as typed wire values (FC=3), never interpolated into SQL.
+// When args are present, parameters are interpolated into the SQL and the
+// statement is re-executed via PrepareAndExecute (FC=41), matching pycubrid's
+// client-side interpolation approach. CUBRID's CAS protocol does not reliably
+// support server-side bind parameters for all drivers.
 func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
 	s.conn.mu.Lock()
 	defer s.conn.mu.Unlock()
@@ -46,14 +49,30 @@ func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
 		return nil, driver.ErrBadConn
 	}
 
-	req := WriteExecute(s.queryHandle, s.stmtType, args, s.conn.autoCommit, s.conn.casInfo)
-	resp, err := s.conn.sendAndRecv(req)
-	if err != nil {
-		return nil, err
-	}
-	res, err := ParseExecute(resp, s.columns, s.stmtType, s.conn.protoVer)
-	if err != nil {
-		return nil, err
+	var res *ExecuteResult
+	var paeRes *PrepareAndExecuteResult
+
+	if len(args) > 0 {
+		// Client-side interpolation: embed args into SQL, use FC=41.
+		interpolatedSQL, err := InterpolateArgs(s.query, args)
+		if err != nil {
+			return nil, err
+		}
+		paeRes, err = s.conn.execSQL(interpolatedSQL)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// No args: use the prepared handle via FC=3.
+		req := WriteExecute(s.queryHandle, s.stmtType, nil, s.conn.autoCommit, s.conn.casInfo)
+		resp, err := s.conn.sendAndRecv(req)
+		if err != nil {
+			return nil, err
+		}
+		res, err = ParseExecute(resp, s.columns, s.stmtType, s.conn.protoVer)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Retrieve last insert ID for INSERT statements.
@@ -63,15 +82,23 @@ func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
 	}
 
 	var affected int64
-	for _, info := range res.ResultInfos {
-		affected += int64(info.ResultCount)
+	if paeRes != nil {
+		for _, info := range paeRes.ResultInfos {
+			affected += int64(info.ResultCount)
+		}
+	} else if res != nil {
+		for _, info := range res.ResultInfos {
+			affected += int64(info.ResultCount)
+		}
 	}
 
 	return &result{lastInsertID: lastID, rowsAffected: affected}, nil
 }
 
 // Query executes the statement and returns the result rows.
-// Parameters are sent as typed wire values (FC=3), never interpolated into SQL.
+// When args are present, parameters are interpolated into the SQL and the
+// statement is re-executed via PrepareAndExecute (FC=41), matching pycubrid's
+// client-side interpolation approach.
 func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 	s.conn.mu.Lock()
 	defer s.conn.mu.Unlock()
@@ -80,29 +107,59 @@ func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 		return nil, driver.ErrBadConn
 	}
 
-	req := WriteExecute(s.queryHandle, s.stmtType, args, s.conn.autoCommit, s.conn.casInfo)
-	resp, err := s.conn.sendAndRecv(req)
-	if err != nil {
-		return nil, err
-	}
-	res, err := ParseExecute(resp, s.columns, s.stmtType, s.conn.protoVer)
-	if err != nil {
-		return nil, err
+	var totalCount, tupleCount int
+	var fetchedRows [][]interface{}
+	var columns []ColumnMetaData
+	var qh int
+	var ownsHandle bool
+
+	if len(args) > 0 {
+		// Client-side interpolation: embed args into SQL, use FC=41.
+		interpolatedSQL, err := InterpolateArgs(s.query, args)
+		if err != nil {
+			return nil, err
+		}
+		paeRes, err := s.conn.execSQL(interpolatedSQL)
+		if err != nil {
+			return nil, err
+		}
+		totalCount = paeRes.TotalTupleCount
+		tupleCount = paeRes.TupleCount
+		fetchedRows = paeRes.Rows
+		columns = paeRes.Columns
+		qh = paeRes.QueryHandle
+		ownsHandle = true // FC=41 creates a new handle
+	} else {
+		// No args: use the prepared handle via FC=3.
+		req := WriteExecute(s.queryHandle, s.stmtType, nil, s.conn.autoCommit, s.conn.casInfo)
+		resp, err := s.conn.sendAndRecv(req)
+		if err != nil {
+			return nil, err
+		}
+		res, err := ParseExecute(resp, s.columns, s.stmtType, s.conn.protoVer)
+		if err != nil {
+			return nil, err
+		}
+		totalCount = res.TotalTupleCount
+		tupleCount = res.TupleCount
+		fetchedRows = res.Rows
+		columns = s.columns
+		qh = s.queryHandle
+		ownsHandle = false
 	}
 
 	r := &rows{
 		conn:         s.conn,
-		queryHandle:  s.queryHandle,
-		columns:      s.columns,
+		queryHandle:  qh,
+		columns:      columns,
 		stmtType:     s.stmtType,
-		totalCount:   res.TotalTupleCount,
-		fetchedCount: len(res.Rows),
-		bufferedRows: res.Rows,
+		totalCount:   totalCount,
+		fetchedCount: len(fetchedRows),
+		bufferedRows: fetchedRows,
 		bufferOffset: 0,
-		exhausted:    res.TupleCount == 0 || len(res.Rows) >= res.TotalTupleCount,
+		exhausted:    tupleCount == 0 || len(fetchedRows) >= totalCount,
 		fetchSize:    defaultFetchSize,
-		// Rows does NOT own the handle; stmt.Close() sends FC=6.
-		closeHandle: false,
+		closeHandle:  ownsHandle,
 	}
 
 	return r, nil

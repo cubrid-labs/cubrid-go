@@ -84,7 +84,8 @@ func (d *Dialector) ClauseBuilders() map[string]clause.ClauseBuilder {
 // DefaultValueOf returns the CUBRID expression for a field's default value.
 func (d *Dialector) DefaultValueOf(field *schema.Field) clause.Expression {
 	if field.AutoIncrement {
-		return clause.Expr{SQL: "AUTO_INCREMENT"}
+		// AUTO_INCREMENT is already appended in DataTypeOf; no DEFAULT needed.
+		return clause.Expr{SQL: ""}
 	}
 	return clause.Expr{SQL: "DEFAULT"}
 }
@@ -119,13 +120,20 @@ func (d *Dialector) Explain(sql string, vars ...interface{}) string {
 
 // DataTypeOf maps a GORM schema field to a CUBRID SQL data type.
 func (d *Dialector) DataTypeOf(field *schema.Field) string {
+	// AUTO_INCREMENT fields must use INTEGER or BIGINT.
+	// We append AUTO_INCREMENT directly so FullDataTypeOf includes it in the DDL.
+	if field.AutoIncrement {
+		if field.Size > 32 {
+			return "BIGINT AUTO_INCREMENT"
+		}
+		return "INTEGER AUTO_INCREMENT"
+	}
+
 	switch field.DataType {
 	case schema.Bool:
 		return "SMALLINT" // CUBRID has no native BOOLEAN in older versions
 	case schema.Int:
 		switch {
-		case field.Size <= 8:
-			return "SMALLINT"
 		case field.Size <= 16:
 			return "SMALLINT"
 		case field.Size <= 32:
@@ -142,7 +150,7 @@ func (d *Dialector) DataTypeOf(field *schema.Field) string {
 		case field.Size <= 32:
 			return "BIGINT"
 		default:
-			return "NUMERIC(20,0)"
+			return "BIGINT"
 		}
 	case schema.Float:
 		if field.Size <= 32 {
@@ -218,7 +226,17 @@ func (m *Migrator) CreateTable(dst ...interface{}) error {
 // HasTable returns true if the named table exists.
 func (m *Migrator) HasTable(dst interface{}) bool {
 	var count int64
-	tableName := m.Migrator.Config.DB.NamingStrategy.TableName(fmt.Sprintf("%T", dst))
+	var tableName string
+	if name, ok := dst.(string); ok {
+		tableName = name
+	} else {
+		stmt := &gorm.Statement{DB: m.DB}
+		if err := stmt.Parse(dst); err == nil {
+			tableName = stmt.Table
+		} else {
+			tableName = fmt.Sprintf("%v", dst)
+		}
+	}
 	m.DB.Raw(
 		"SELECT COUNT(*) FROM db_class WHERE class_name = ? AND is_system_class = 'NO'",
 		tableName,
@@ -229,7 +247,17 @@ func (m *Migrator) HasTable(dst interface{}) bool {
 // HasColumn returns true if the named column exists on the table.
 func (m *Migrator) HasColumn(dst interface{}, columnName string) bool {
 	var count int64
-	tableName := m.Migrator.Config.DB.NamingStrategy.TableName(fmt.Sprintf("%T", dst))
+	var tableName string
+	if name, ok := dst.(string); ok {
+		tableName = name
+	} else {
+		stmt := &gorm.Statement{DB: m.DB}
+		if err := stmt.Parse(dst); err == nil {
+			tableName = stmt.Table
+		} else {
+			tableName = fmt.Sprintf("%v", dst)
+		}
+	}
 	m.DB.Raw(
 		`SELECT COUNT(*) FROM db_attribute WHERE class_name = ? AND attr_name = ?`,
 		tableName, columnName,
@@ -240,7 +268,17 @@ func (m *Migrator) HasColumn(dst interface{}, columnName string) bool {
 // HasIndex returns true if the named index exists on the table.
 func (m *Migrator) HasIndex(dst interface{}, indexName string) bool {
 	var count int64
-	tableName := m.Migrator.Config.DB.NamingStrategy.TableName(fmt.Sprintf("%T", dst))
+	var tableName string
+	if name, ok := dst.(string); ok {
+		tableName = name
+	} else {
+		stmt := &gorm.Statement{DB: m.DB}
+		if err := stmt.Parse(dst); err == nil {
+			tableName = stmt.Table
+		} else {
+			tableName = fmt.Sprintf("%v", dst)
+		}
+	}
 	m.DB.Raw(
 		`SELECT COUNT(*) FROM db_index WHERE class_name = ? AND index_name = ?`,
 		tableName, indexName,
@@ -254,6 +292,8 @@ func (m *Migrator) FullDataTypeOf(field *schema.Field) clause.Expr {
 
 	// CUBRID: replace AUTOINCREMENT keyword with AUTO_INCREMENT.
 	sql := strings.ReplaceAll(expr.SQL, "AUTOINCREMENT", "AUTO_INCREMENT")
+	// Remove empty DEFAULT clause that GORM base may add for auto-increment fields.
+	sql = strings.TrimSuffix(sql, " DEFAULT ")
 	expr.SQL = sql
 	return expr
 }
