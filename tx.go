@@ -10,12 +10,12 @@ func (t *tx) Commit() error {
 	t.conn.mu.Lock()
 	defer t.conn.mu.Unlock()
 
-	req := WriteEndTran(TxCommit, t.conn.casInfo)
+	req := writeEndTran(TxCommit, t.conn.casInfo)
 	resp, err := t.conn.sendAndRecv(req)
 	if err != nil {
 		return err
 	}
-	if err = ParseSimpleResponse(resp); err != nil {
+	if err = parseSimpleResponse(resp); err != nil {
 		return err
 	}
 	t.conn.autoCommit = true
@@ -27,12 +27,12 @@ func (t *tx) Rollback() error {
 	t.conn.mu.Lock()
 	defer t.conn.mu.Unlock()
 
-	req := WriteEndTran(TxRollback, t.conn.casInfo)
+	req := writeEndTran(TxRollback, t.conn.casInfo)
 	resp, err := t.conn.sendAndRecv(req)
 	if err != nil {
 		return err
 	}
-	if err = ParseSimpleResponse(resp); err != nil {
+	if err = parseSimpleResponse(resp); err != nil {
 		return err
 	}
 	t.conn.autoCommit = true

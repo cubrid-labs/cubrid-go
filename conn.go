@@ -44,7 +44,7 @@ func (c *conn) connect() error {
 	}
 
 	// Step 1: send ClientInfoExchange (10 bytes, no framing header).
-	if _, err = brokerConn.Write(WriteClientInfoExchange()); err != nil {
+	if _, err = brokerConn.Write(writeClientInfoExchange()); err != nil {
 		return err
 	}
 
@@ -72,7 +72,7 @@ func (c *conn) connect() error {
 	}
 
 	// Step 4: send OpenDatabase (628 bytes, no framing header).
-	if _, err = c.socket.Write(WriteOpenDatabase(c.database, c.user, c.password)); err != nil {
+	if _, err = c.socket.Write(writeOpenDatabase(c.database, c.user, c.password)); err != nil {
 		return err
 	}
 
@@ -81,7 +81,7 @@ func (c *conn) connect() error {
 	if err != nil {
 		return err
 	}
-	res, err := ParseOpenDatabase(data)
+	res, err := parseOpenDatabase(data)
 	if err != nil {
 		return err
 	}
@@ -128,34 +128,34 @@ func (c *conn) sendAndRecv(data []byte) ([]byte, error) {
 // closeQueryHandle sends FC=6 to release a server-side handle.
 // Errors are silently ignored (best-effort cleanup).
 func (c *conn) closeQueryHandle(qh int) {
-	req := WriteCloseReqHandle(qh, c.casInfo)
+	req := writeCloseReqHandle(qh, c.casInfo)
 	resp, err := c.sendAndRecv(req)
 	if err != nil {
 		return
 	}
-	_ = ParseSimpleResponse(resp)
+	_ = parseSimpleResponse(resp)
 }
 
 // execSQL runs a complete SQL string via PrepareAndExecute (FC=41).
 // Used internally for one-shot queries (e.g. SELECT LAST_INSERT_ID()).
-func (c *conn) execSQL(sql string) (*PrepareAndExecuteResult, error) {
-	req := WritePrepareAndExecute(sql, c.autoCommit, c.casInfo)
+func (c *conn) execSQL(sql string) (*prepareAndExecuteResult, error) {
+	req := writePrepareAndExecute(sql, c.autoCommit, c.casInfo)
 	resp, err := c.sendAndRecv(req)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePrepareAndExecute(resp, c.protoVer)
+	return parsePrepareAndExecute(resp, c.protoVer)
 }
 
 // fetchLastInsertID retrieves the last auto-generated ID via FC=40.
 // Called by stmt.Exec() after a successful INSERT.
 func (c *conn) fetchLastInsertID() int64 {
-	req := WriteGetLastInsertId(c.casInfo)
+	req := writeGetLastInsertId(c.casInfo)
 	resp, err := c.sendAndRecv(req)
 	if err != nil {
 		return 0
 	}
-	idStr, err := ParseGetLastInsertId(resp)
+	idStr, err := parseGetLastInsertId(resp)
 	if err != nil || idStr == "" {
 		return 0
 	}
@@ -183,12 +183,12 @@ func (c *conn) Prepare(query string) (driver.Stmt, error) {
 		return nil, driver.ErrBadConn
 	}
 
-	req := WritePrepare(query, c.autoCommit, c.casInfo)
+	req := writePrepare(query, c.autoCommit, c.casInfo)
 	resp, err := c.sendAndRecv(req)
 	if err != nil {
 		return nil, err
 	}
-	res, err := ParsePrepare(resp)
+	res, err := parsePrepare(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (c *conn) Close() error {
 	}
 	c.closed = true
 	if c.socket != nil {
-		req := WriteConClose(c.casInfo)
+		req := writeConClose(c.casInfo)
 		c.socket.Write(req) // best-effort
 		c.socket.Close()
 	}
@@ -240,12 +240,12 @@ func (c *conn) Ping() error {
 	if c.closed {
 		return driver.ErrBadConn
 	}
-	req := WriteGetDbVersion(true, c.casInfo)
+	req := writeGetDbVersion(true, c.casInfo)
 	resp, err := c.sendAndRecv(req)
 	if err != nil {
 		return driver.ErrBadConn
 	}
-	_, err = ParseGetDbVersion(resp)
+	_, err = parseGetDbVersion(resp)
 	return err
 }
 
@@ -254,10 +254,10 @@ func (c *conn) ServerVersion() (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	req := WriteGetDbVersion(true, c.casInfo)
+	req := writeGetDbVersion(true, c.casInfo)
 	resp, err := c.sendAndRecv(req)
 	if err != nil {
 		return "", err
 	}
-	return ParseGetDbVersion(resp)
+	return parseGetDbVersion(resp)
 }

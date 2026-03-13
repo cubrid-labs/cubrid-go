@@ -13,7 +13,7 @@ type stmt struct {
 	queryHandle int    // server-side handle from FC=2
 	stmtType    int    // statement type (SELECT, INSERT, …)
 	bindCount   int    // number of ? placeholders
-	columns     []ColumnMetaData
+	columns     []columnMetaData
 	closed      bool
 }
 
@@ -46,12 +46,12 @@ func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
 		return nil, driver.ErrBadConn
 	}
 
-	req := WriteExecute(s.queryHandle, s.stmtType, args, s.conn.autoCommit, s.conn.casInfo)
+	req := writeExecute(s.queryHandle, s.stmtType, args, s.conn.autoCommit, s.conn.casInfo)
 	resp, err := s.conn.sendAndRecv(req)
 	if err != nil {
 		return nil, err
 	}
-	res, err := ParseExecute(resp, s.columns, s.stmtType, s.conn.protoVer)
+	res, err := parseExecute(resp, s.columns, s.stmtType, s.conn.protoVer)
 	if err != nil {
 		return nil, err
 	}
@@ -80,12 +80,12 @@ func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 		return nil, driver.ErrBadConn
 	}
 
-	req := WriteExecute(s.queryHandle, s.stmtType, args, s.conn.autoCommit, s.conn.casInfo)
+	req := writeExecute(s.queryHandle, s.stmtType, args, s.conn.autoCommit, s.conn.casInfo)
 	resp, err := s.conn.sendAndRecv(req)
 	if err != nil {
 		return nil, err
 	}
-	res, err := ParseExecute(resp, s.columns, s.stmtType, s.conn.protoVer)
+	res, err := parseExecute(resp, s.columns, s.stmtType, s.conn.protoVer)
 	if err != nil {
 		return nil, err
 	}

@@ -15,7 +15,7 @@ import (
 type rows struct {
 	conn         *conn
 	queryHandle  int
-	columns      []ColumnMetaData
+	columns      []columnMetaData
 	stmtType     int
 	totalCount   int
 	fetchedCount int
@@ -68,12 +68,12 @@ func (r *rows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 
-	fetchReq := WriteFetch(r.queryHandle, r.fetchedCount, r.fetchSize, r.conn.casInfo)
+	fetchReq := writeFetch(r.queryHandle, r.fetchedCount, r.fetchSize, r.conn.casInfo)
 	resp, err := r.conn.sendAndRecv(fetchReq)
 	if err != nil {
 		return err
 	}
-	res, err := ParseFetch(resp, r.columns, r.stmtType)
+	res, err := parseFetch(resp, r.columns, r.stmtType)
 	if err != nil {
 		return err
 	}

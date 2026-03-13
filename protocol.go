@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// ColumnMetaData holds metadata for a single result-set column.
-type ColumnMetaData struct {
+// columnMetaData holds metadata for a single result-set column.
+type columnMetaData struct {
 	ColumnType      int
 	Scale           int
 	Precision       int
@@ -25,22 +25,22 @@ type ColumnMetaData struct {
 	IsForeignKey    bool
 }
 
-// ResultInfo holds per-statement result metadata.
-type ResultInfo struct {
+// resultInfo holds per-statement result metadata.
+type resultInfo struct {
 	StmtType    int
 	ResultCount int
 	OID         []byte
 }
 
 // raiseError parses an error response body and returns an error value.
-func raiseError(reader *PacketReader, responseLength int) error {
+func raiseError(reader *packetReader, responseLength int) error {
 	code, msg := reader.readError(responseLength)
 	return newError(code, msg)
 }
 
 // parseColumnMetadata parses count column-metadata entries from reader.
-func parseColumnMetadata(reader *PacketReader, count int) []ColumnMetaData {
-	cols := make([]ColumnMetaData, 0, count)
+func parseColumnMetadata(reader *packetReader, count int) []columnMetaData {
+	cols := make([]columnMetaData, 0, count)
 	for i := 0; i < count; i++ {
 		legacyType := int(reader.parseByte())
 		var colType int
@@ -70,7 +70,7 @@ func parseColumnMetadata(reader *PacketReader, count int) []ColumnMetaData {
 		isForeignKey := reader.parseByte() == 1
 		reader.parseByte() // is_shared
 
-		cols = append(cols, ColumnMetaData{
+		cols = append(cols, columnMetaData{
 			ColumnType:      colType,
 			Scale:           scale,
 			Precision:       precision,
@@ -89,15 +89,15 @@ func parseColumnMetadata(reader *PacketReader, count int) []ColumnMetaData {
 }
 
 // parseResultInfos parses count result-info entries from reader.
-func parseResultInfos(reader *PacketReader, count int) []ResultInfo {
-	infos := make([]ResultInfo, 0, count)
+func parseResultInfos(reader *packetReader, count int) []resultInfo {
+	infos := make([]resultInfo, 0, count)
 	for i := 0; i < count; i++ {
 		stmtType := int(reader.parseByte())
 		resultCount := int(reader.parseInt())
 		oid := reader.parseRawBytes(SizeOID)
 		reader.parseInt() // cache_time_sec
 		reader.parseInt() // cache_time_usec
-		infos = append(infos, ResultInfo{
+		infos = append(infos, resultInfo{
 			StmtType:    stmtType,
 			ResultCount: resultCount,
 			OID:         oid,
@@ -107,7 +107,7 @@ func parseResultInfos(reader *PacketReader, count int) []ResultInfo {
 }
 
 // readValue reads and returns a single typed column value.
-func readValue(reader *PacketReader, colType int, size int) interface{} {
+func readValue(reader *packetReader, colType int, size int) interface{} {
 	switch colType {
 	case TypeChar, TypeString, TypeNChar, TypeVarNChar, TypeEnum:
 		return reader.parseNullTermString(size)
@@ -122,7 +122,6 @@ func readValue(reader *PacketReader, colType int, size int) interface{} {
 	case TypeDouble, TypeMonetary:
 		return reader.parseDouble()
 	case TypeNumeric:
-		// Stored as null-terminated string; caller may parse to decimal.
 		return reader.parseNullTermString(size)
 	case TypeDate:
 		return reader.parseDate()
@@ -135,7 +134,7 @@ func readValue(reader *PacketReader, colType int, size int) interface{} {
 	case TypeBit, TypeVarBit:
 		return reader.parseRawBytes(size)
 	case TypeBlob, TypeClob:
-		return reader.parseRawBytes(size) // raw LOB handle
+		return reader.parseRawBytes(size)
 	case TypeNull:
 		return nil
 	default:
@@ -145,9 +144,9 @@ func readValue(reader *PacketReader, colType int, size int) interface{} {
 
 // parseRowData parses tupleCount rows from reader.
 func parseRowData(
-	reader *PacketReader,
+	reader *packetReader,
 	tupleCount int,
-	columns []ColumnMetaData,
+	columns []columnMetaData,
 	stmtType int,
 ) [][]interface{} {
 	isCallType := stmtType == StmtCallSP
@@ -181,8 +180,8 @@ func parseRowData(
 
 // ─── Handshake ────────────────────────────────────────────────────────────────
 
-// WriteClientInfoExchange returns the 10-byte handshake request (no header).
-func WriteClientInfoExchange() []byte {
+// writeClientInfoExchange returns the 10-byte handshake request (no header).
+func writeClientInfoExchange() []byte {
 	buf := make([]byte, 0, 10)
 	buf = append(buf, []byte(MagicString)...)
 	buf = append(buf, ClientJDBC)
@@ -191,15 +190,15 @@ func WriteClientInfoExchange() []byte {
 	return buf
 }
 
-// ParseClientInfoExchange parses the 4-byte handshake response.
-func ParseClientInfoExchange(data []byte) int {
+// parseClientInfoExchange parses the 4-byte handshake response.
+func parseClientInfoExchange(data []byte) int {
 	return int(int32(binary.BigEndian.Uint32(data[:4])))
 }
 
 // ─── Open / Close Database ────────────────────────────────────────────────────
 
-// WriteOpenDatabase returns the 628-byte open-database request (no header).
-func WriteOpenDatabase(database, user, password string) []byte {
+// writeOpenDatabase returns the 628-byte open-database request (no header).
+func writeOpenDatabase(database, user, password string) []byte {
 	w := newPacketWriter()
 	w.writeFixedString(database, 32)
 	w.writeFixedString(user, 32)
@@ -209,16 +208,16 @@ func WriteOpenDatabase(database, user, password string) []byte {
 	return w.toBytes()
 }
 
-// OpenDatabaseResult holds the parsed open-database response.
-type OpenDatabaseResult struct {
+// openDatabaseResult holds the parsed open-database response.
+type openDatabaseResult struct {
 	CASInfo         [SizeCASInfo]byte
 	ProtocolVersion int
 	SessionID       int
 }
 
-// ParseOpenDatabase parses the open-database response.
+// parseOpenDatabase parses the open-database response.
 // data must start at byte 0 of the response (including CAS_INFO).
-func ParseOpenDatabase(data []byte) (*OpenDatabaseResult, error) {
+func parseOpenDatabase(data []byte) (*openDatabaseResult, error) {
 	reader := newPacketReader(data)
 
 	var casInfo [SizeCASInfo]byte
@@ -234,15 +233,15 @@ func ParseOpenDatabase(data []byte) (*OpenDatabaseResult, error) {
 	protoVersion := int(brokerBytes[4]) & 0x3F
 	sessionID := int(reader.parseInt())
 
-	return &OpenDatabaseResult{
+	return &openDatabaseResult{
 		CASInfo:         casInfo,
 		ProtocolVersion: protoVersion,
 		SessionID:       sessionID,
 	}, nil
 }
 
-// WriteConClose returns the CON_CLOSE request packet.
-func WriteConClose(casInfo [SizeCASInfo]byte) []byte {
+// writeConClose returns the CON_CLOSE request packet.
+func writeConClose(casInfo [SizeCASInfo]byte) []byte {
 	w := newPacketWriter()
 	w.writeByte(FuncConClose)
 	payload := w.toBytes()
@@ -251,8 +250,8 @@ func WriteConClose(casInfo [SizeCASInfo]byte) []byte {
 
 // ─── Transaction ─────────────────────────────────────────────────────────────
 
-// WriteEndTran returns a COMMIT or ROLLBACK request packet.
-func WriteEndTran(txType byte, casInfo [SizeCASInfo]byte) []byte {
+// writeEndTran returns a COMMIT or ROLLBACK request packet.
+func writeEndTran(txType byte, casInfo [SizeCASInfo]byte) []byte {
 	w := newPacketWriter()
 	w.writeByte(FuncEndTran)
 	w.addByte(txType)
@@ -260,8 +259,8 @@ func WriteEndTran(txType byte, casInfo [SizeCASInfo]byte) []byte {
 	return append(buildProtocolHeader(len(payload), casInfo), payload...)
 }
 
-// ParseSimpleResponse parses a response that only contains a result code.
-func ParseSimpleResponse(data []byte) error {
+// parseSimpleResponse parses a response that only contains a result code.
+func parseSimpleResponse(data []byte) error {
 	reader := newPacketReader(data)
 	reader.parseRawBytes(SizeCASInfo)
 	code := reader.parseInt()
@@ -273,8 +272,8 @@ func ParseSimpleResponse(data []byte) error {
 
 // ─── PrepareAndExecute ───────────────────────────────────────────────────────
 
-// WritePrepareAndExecute returns a PREPARE_AND_EXECUTE request packet.
-func WritePrepareAndExecute(sql string, autoCommit bool, casInfo [SizeCASInfo]byte) []byte {
+// writePrepareAndExecute returns a PREPARE_AND_EXECUTE request packet.
+func writePrepareAndExecute(sql string, autoCommit bool, casInfo [SizeCASInfo]byte) []byte {
 	w := newPacketWriter()
 	w.writeByte(FuncPrepareAndExecute)
 	w.addInt(3) // arg count
@@ -286,31 +285,31 @@ func WritePrepareAndExecute(sql string, autoCommit bool, casInfo [SizeCASInfo]by
 		w.addByte(0)
 	}
 	w.addByte(ExecuteQueryAll)
-	w.addInt(0)      // max_col_size
-	w.addInt(0)      // max_row_size
-	w.writeInt(0)    // NULL (bind params)
+	w.addInt(0)       // max_col_size
+	w.addInt(0)       // max_row_size
+	w.writeInt(0)     // NULL (bind params)
 	w.writeInt(SizeLong) // cache time length
-	w.writeInt(0)    // cache time sec
-	w.writeInt(0)    // cache time usec
-	w.addInt(0)      // query timeout
+	w.writeInt(0)     // cache time sec
+	w.writeInt(0)     // cache time usec
+	w.addInt(0)       // query timeout
 	payload := w.toBytes()
 	return append(buildProtocolHeader(len(payload), casInfo), payload...)
 }
 
-// PrepareAndExecuteResult holds the result of a PREPARE_AND_EXECUTE response.
-type PrepareAndExecuteResult struct {
+// prepareAndExecuteResult holds the result of a PREPARE_AND_EXECUTE response.
+type prepareAndExecuteResult struct {
 	QueryHandle     int
 	StatementType   int
 	BindCount       int
-	Columns         []ColumnMetaData
+	Columns         []columnMetaData
 	TotalTupleCount int
-	ResultInfos     []ResultInfo
+	ResultInfos     []resultInfo
 	TupleCount      int
 	Rows            [][]interface{}
 }
 
-// ParsePrepareAndExecute parses a PREPARE_AND_EXECUTE response.
-func ParsePrepareAndExecute(data []byte, protoVersion int) (*PrepareAndExecuteResult, error) {
+// parsePrepareAndExecute parses a PREPARE_AND_EXECUTE response.
+func parsePrepareAndExecute(data []byte, protoVersion int) (*prepareAndExecuteResult, error) {
 	reader := newPacketReader(data)
 	reader.parseRawBytes(SizeCASInfo)
 
@@ -319,11 +318,11 @@ func ParsePrepareAndExecute(data []byte, protoVersion int) (*PrepareAndExecuteRe
 		return nil, raiseError(reader, len(data)-SizeCASInfo-SizeInt)
 	}
 
-	res := &PrepareAndExecuteResult{QueryHandle: int(responseCode)}
-	reader.parseInt()                            // result cache lifetime
-	res.StatementType = int(reader.parseByte())  // statement type
-	res.BindCount = int(reader.parseInt())        // bind count
-	reader.parseByte()                            // is_updatable
+	res := &prepareAndExecuteResult{QueryHandle: int(responseCode)}
+	reader.parseInt()                           // result cache lifetime
+	res.StatementType = int(reader.parseByte()) // statement type
+	res.BindCount = int(reader.parseInt())      // bind count
+	reader.parseByte()                          // is_updatable
 	colCount := int(reader.parseInt())
 	res.Columns = parseColumnMetadata(reader, colCount)
 
@@ -352,8 +351,8 @@ func ParsePrepareAndExecute(data []byte, protoVersion int) (*PrepareAndExecuteRe
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
 
-// WriteFetch returns a FETCH request packet.
-func WriteFetch(queryHandle, currentTupleCount, fetchSize int, casInfo [SizeCASInfo]byte) []byte {
+// writeFetch returns a FETCH request packet.
+func writeFetch(queryHandle, currentTupleCount, fetchSize int, casInfo [SizeCASInfo]byte) []byte {
 	w := newPacketWriter()
 	w.writeByte(FuncFetch)
 	w.addInt(int32(queryHandle))
@@ -365,21 +364,21 @@ func WriteFetch(queryHandle, currentTupleCount, fetchSize int, casInfo [SizeCASI
 	return append(buildProtocolHeader(len(payload), casInfo), payload...)
 }
 
-// FetchResult holds fetched rows.
-type FetchResult struct {
+// fetchResult holds fetched rows.
+type fetchResult struct {
 	TupleCount int
 	Rows       [][]interface{}
 }
 
-// ParseFetch parses a FETCH response.
-func ParseFetch(data []byte, columns []ColumnMetaData, stmtType int) (*FetchResult, error) {
+// parseFetch parses a FETCH response.
+func parseFetch(data []byte, columns []columnMetaData, stmtType int) (*fetchResult, error) {
 	reader := newPacketReader(data)
 	reader.parseRawBytes(SizeCASInfo)
 	responseCode := reader.parseInt()
 	if responseCode < 0 {
 		return nil, raiseError(reader, len(data)-SizeCASInfo-SizeInt)
 	}
-	res := &FetchResult{}
+	res := &fetchResult{}
 	res.TupleCount = int(reader.parseInt())
 	if res.TupleCount > 0 && len(columns) > 0 {
 		res.Rows = parseRowData(reader, res.TupleCount, columns, stmtType)
@@ -389,8 +388,8 @@ func ParseFetch(data []byte, columns []ColumnMetaData, stmtType int) (*FetchResu
 
 // ─── Close Query Handle ───────────────────────────────────────────────────────
 
-// WriteCloseReqHandle returns a CLOSE_REQ_HANDLE request packet.
-func WriteCloseReqHandle(queryHandle int, casInfo [SizeCASInfo]byte) []byte {
+// writeCloseReqHandle returns a CLOSE_REQ_HANDLE request packet.
+func writeCloseReqHandle(queryHandle int, casInfo [SizeCASInfo]byte) []byte {
 	w := newPacketWriter()
 	w.writeByte(FuncCloseReqHandle)
 	w.addInt(int32(queryHandle))
@@ -400,8 +399,8 @@ func WriteCloseReqHandle(queryHandle int, casInfo [SizeCASInfo]byte) []byte {
 
 // ─── DB Version ──────────────────────────────────────────────────────────────
 
-// WriteGetDbVersion returns a GET_DB_VERSION request packet.
-func WriteGetDbVersion(autoCommit bool, casInfo [SizeCASInfo]byte) []byte {
+// writeGetDbVersion returns a GET_DB_VERSION request packet.
+func writeGetDbVersion(autoCommit bool, casInfo [SizeCASInfo]byte) []byte {
 	w := newPacketWriter()
 	w.writeByte(FuncGetDbVersion)
 	if autoCommit {
@@ -413,8 +412,8 @@ func WriteGetDbVersion(autoCommit bool, casInfo [SizeCASInfo]byte) []byte {
 	return append(buildProtocolHeader(len(payload), casInfo), payload...)
 }
 
-// ParseGetDbVersion parses a GET_DB_VERSION response.
-func ParseGetDbVersion(data []byte) (string, error) {
+// parseGetDbVersion parses a GET_DB_VERSION response.
+func parseGetDbVersion(data []byte) (string, error) {
 	reader := newPacketReader(data)
 	reader.parseRawBytes(SizeCASInfo)
 	code := reader.parseInt()
@@ -427,16 +426,16 @@ func ParseGetDbVersion(data []byte) (string, error) {
 
 // ─── Last Insert ID ───────────────────────────────────────────────────────────
 
-// WriteGetLastInsertId returns a GET_LAST_INSERT_ID request packet.
-func WriteGetLastInsertId(casInfo [SizeCASInfo]byte) []byte {
+// writeGetLastInsertId returns a GET_LAST_INSERT_ID request packet.
+func writeGetLastInsertId(casInfo [SizeCASInfo]byte) []byte {
 	w := newPacketWriter()
 	w.writeByte(FuncGetLastInsertId)
 	payload := w.toBytes()
 	return append(buildProtocolHeader(len(payload), casInfo), payload...)
 }
 
-// ParseGetLastInsertId parses a GET_LAST_INSERT_ID response.
-func ParseGetLastInsertId(data []byte) (string, error) {
+// parseGetLastInsertId parses a GET_LAST_INSERT_ID response.
+func parseGetLastInsertId(data []byte) (string, error) {
 	reader := newPacketReader(data)
 	reader.parseRawBytes(SizeCASInfo)
 	code := reader.parseInt()
@@ -451,9 +450,8 @@ func ParseGetLastInsertId(data []byte) (string, error) {
 
 // ─── Prepare (FC=2) ──────────────────────────────────────────────────────────
 
-// WritePrepare returns a PREPARE request packet (FC=2).
-// The server parses the SQL, validates it, and returns a reusable query handle.
-func WritePrepare(sql string, autoCommit bool, casInfo [SizeCASInfo]byte) []byte {
+// writePrepare returns a PREPARE request packet (FC=2).
+func writePrepare(sql string, autoCommit bool, casInfo [SizeCASInfo]byte) []byte {
 	w := newPacketWriter()
 	w.writeByte(FuncPrepare)
 	w.writeNullTermString(sql)
@@ -467,16 +465,16 @@ func WritePrepare(sql string, autoCommit bool, casInfo [SizeCASInfo]byte) []byte
 	return append(buildProtocolHeader(len(payload), casInfo), payload...)
 }
 
-// PrepareResult holds the parsed PREPARE response.
-type PrepareResult struct {
+// prepareResult holds the parsed PREPARE response.
+type prepareResult struct {
 	QueryHandle   int
 	StatementType int
 	BindCount     int
-	Columns       []ColumnMetaData
+	Columns       []columnMetaData
 }
 
-// ParsePrepare parses a PREPARE response.
-func ParsePrepare(data []byte) (*PrepareResult, error) {
+// parsePrepare parses a PREPARE response.
+func parsePrepare(data []byte) (*prepareResult, error) {
 	reader := newPacketReader(data)
 	reader.parseRawBytes(SizeCASInfo)
 
@@ -485,7 +483,7 @@ func ParsePrepare(data []byte) (*PrepareResult, error) {
 		return nil, raiseError(reader, len(data)-SizeCASInfo-SizeInt)
 	}
 
-	res := &PrepareResult{QueryHandle: int(responseCode)}
+	res := &prepareResult{QueryHandle: int(responseCode)}
 	reader.parseInt()                           // result cache lifetime
 	res.StatementType = int(reader.parseByte()) // statement type
 	res.BindCount = int(reader.parseInt())      // number of ? placeholders
@@ -497,9 +495,8 @@ func ParsePrepare(data []byte) (*PrepareResult, error) {
 
 // ─── Execute (FC=3) ───────────────────────────────────────────────────────────
 
-// WriteExecute returns an EXECUTE request packet (FC=3).
-// Typed bind parameters are encoded and sent over the wire — no SQL interpolation.
-func WriteExecute(
+// writeExecute returns an EXECUTE request packet (FC=3).
+func writeExecute(
 	queryHandle int,
 	stmtType int,
 	args []driver.Value,
@@ -517,7 +514,6 @@ func WriteExecute(
 	w.addInt(0) // max_col_size
 	w.addInt(0) // max_row_size
 
-	// Bind-parameter block: int32(size) + packed params, or int32(0) for none.
 	bindData := encodeBindParams(args)
 	if len(bindData) > 0 {
 		w.addBytes(bindData)
@@ -525,7 +521,6 @@ func WriteExecute(
 		w.writeInt(0) // NULL — no bind params
 	}
 
-	// Fetch / commit / cursor options (raw, not length-prefixed).
 	w.writeInt(1)          // bind_mode_count
 	w.writeByte(fetchFlag) // fetch inline rows for SELECT
 	w.addByte(func() byte {
@@ -534,7 +529,7 @@ func WriteExecute(
 		}
 		return 0
 	}())
-	w.addByte(1)   // forward_only
+	w.addByte(1) // forward_only
 	w.addCacheTime()
 	w.addInt(0) // query timeout
 
@@ -542,22 +537,22 @@ func WriteExecute(
 	return append(buildProtocolHeader(len(payload), casInfo), payload...)
 }
 
-// ExecuteResult holds the parsed EXECUTE response.
-type ExecuteResult struct {
+// executeResult holds the parsed EXECUTE response.
+type executeResult struct {
 	TotalTupleCount int
-	ResultInfos     []ResultInfo
+	ResultInfos     []resultInfo
 	TupleCount      int
 	Rows            [][]interface{}
 }
 
-// ParseExecute parses an EXECUTE response.
-// columns must be the column metadata returned by ParsePrepare.
-func ParseExecute(
+// parseExecute parses an EXECUTE response.
+// columns must be the column metadata returned by parsePrepare.
+func parseExecute(
 	data []byte,
-	columns []ColumnMetaData,
+	columns []columnMetaData,
 	stmtType int,
 	protoVersion int,
-) (*ExecuteResult, error) {
+) (*executeResult, error) {
 	reader := newPacketReader(data)
 	reader.parseRawBytes(SizeCASInfo)
 
@@ -566,7 +561,7 @@ func ParseExecute(
 		return nil, raiseError(reader, len(data)-SizeCASInfo-SizeInt)
 	}
 
-	res := &ExecuteResult{TotalTupleCount: int(responseCode)}
+	res := &executeResult{TotalTupleCount: int(responseCode)}
 	reader.parseByte() // cache_reusable
 	resultCount := int(reader.parseInt())
 	res.ResultInfos = parseResultInfos(reader, resultCount)
@@ -591,16 +586,6 @@ func ParseExecute(
 
 // ─── Bind-parameter encoding ──────────────────────────────────────────────────
 
-// encodeBindParams packs []driver.Value into the CUBRID CAS wire format.
-//
-// Each parameter is encoded as:
-//
-//	int32  size   — number of bytes to follow; 0 means SQL NULL
-//	byte   type   — CUBRIDDataType (omitted when size == 0)
-//	bytes  value  — type-specific raw bytes (size-1 bytes)
-//
-// The returned slice is the concatenation of all parameter encodings.
-// The caller prepends the total length via addBytes().
 func encodeBindParams(args []driver.Value) []byte {
 	if len(args) == 0 {
 		return nil
@@ -612,14 +597,14 @@ func encodeBindParams(args []driver.Value) []byte {
 	return w.toBytes()
 }
 
-func encodeOneParam(w *PacketWriter, arg driver.Value) {
+func encodeOneParam(w *packetWriter, arg driver.Value) {
 	if arg == nil {
 		w.writeInt(0) // SQL NULL
 		return
 	}
 	switch v := arg.(type) {
 	case bool:
-		w.writeInt(1 + SizeShort) // type + int16
+		w.writeInt(1 + SizeShort)
 		w.writeByte(TypeShort)
 		if v {
 			w.writeShort(1)
@@ -627,25 +612,25 @@ func encodeOneParam(w *PacketWriter, arg driver.Value) {
 			w.writeShort(0)
 		}
 	case int64:
-		w.writeInt(1 + SizeLong) // type + int64
+		w.writeInt(1 + SizeLong)
 		w.writeByte(TypeBigInt)
 		w.writeLong(v)
 	case float64:
-		w.writeInt(1 + SizeDouble) // type + float64
+		w.writeInt(1 + SizeDouble)
 		w.writeByte(TypeDouble)
 		w.writeDouble(v)
 	case string:
 		encoded := []byte(v)
-		w.writeInt(int32(1 + len(encoded) + 1)) // type + utf8 + null byte
+		w.writeInt(int32(1 + len(encoded) + 1))
 		w.writeByte(TypeString)
 		w.writeRawBytes(encoded)
 		w.writeByte(0x00)
 	case []byte:
-		w.writeInt(int32(1 + len(v))) // type + raw bytes
+		w.writeInt(int32(1 + len(v)))
 		w.writeByte(TypeVarBit)
 		w.writeRawBytes(v)
 	case time.Time:
-		w.writeInt(1 + SizeDatetime) // type + 7×int16
+		w.writeInt(1 + SizeDatetime)
 		w.writeByte(TypeDatetime)
 		w.writeShort(int16(v.Year()))
 		w.writeShort(int16(v.Month()))
@@ -655,7 +640,6 @@ func encodeOneParam(w *PacketWriter, arg driver.Value) {
 		w.writeShort(int16(v.Second()))
 		w.writeShort(int16(v.Nanosecond() / 1e6))
 	default:
-		// Fallback: stringify unknown types.
 		s := fmt.Sprintf("%v", v)
 		encoded := []byte(s)
 		w.writeInt(int32(1 + len(encoded) + 1))

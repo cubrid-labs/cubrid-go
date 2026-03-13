@@ -8,10 +8,9 @@ import (
 	"time"
 )
 
-// InterpolateArgs replaces `?` placeholders with formatted argument literals.
-// This is used only for logging / GORM's Explain method — NOT for actual
-// query execution, which sends typed bind parameters over the wire (FC=3).
-func InterpolateArgs(sql string, args []driver.Value) (string, error) {
+// interpolateArgs replaces `?` placeholders with formatted argument literals.
+// Used only for logging / GORM's Explain method — NOT for actual query execution.
+func interpolateArgs(sql string, args []driver.Value) (string, error) {
 	if len(args) == 0 {
 		return sql, nil
 	}
@@ -28,7 +27,7 @@ func InterpolateArgs(sql string, args []driver.Value) (string, error) {
 	for i, part := range parts {
 		sb.WriteString(part)
 		if i < len(args) {
-			formatted, err := FormatValue(args[i])
+			formatted, err := formatValue(args[i])
 			if err != nil {
 				return "", err
 			}
@@ -38,9 +37,8 @@ func InterpolateArgs(sql string, args []driver.Value) (string, error) {
 	return sb.String(), nil
 }
 
-// FormatValue converts a driver.Value to a CUBRID SQL literal string.
-// Used by InterpolateArgs and the GORM dialector's Explain method.
-func FormatValue(v driver.Value) (string, error) {
+// formatValue converts a driver.Value to a CUBRID SQL literal string.
+func formatValue(v driver.Value) (string, error) {
 	if v == nil {
 		return "NULL", nil
 	}
