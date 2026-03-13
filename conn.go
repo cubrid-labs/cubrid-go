@@ -13,7 +13,7 @@ import (
 const defaultFetchSize = 100
 
 // conn is a single TCP connection to the CUBRID CAS broker.
-// It implements driver.Conn, driver.ConnBeginTx, and driver.Pinger.
+// It implements driver.Conn, driver.Pinger, and driver.ConnBeginTx.
 type conn struct {
 	mu         sync.Mutex
 	socket     net.Conn
@@ -29,12 +29,13 @@ type conn struct {
 	closed     bool
 }
 
-// connect performs the two-step CUBRID broker handshake.
+// connect performs the two-step CUBRID broker handshake and opens the database.
 func (c *conn) connect() error {
 	brokerAddr := fmt.Sprintf("%s:%d", c.host, c.port)
 	brokerConn, err := net.DialTimeout("tcp", brokerAddr, c.timeout)
 	if err != nil {
-		return &OperationalError{CubridError{Code: -1, Message: fmt.Sprintf("dial broker %s: %v", brokerAddr, err)}}
+		return &OperationalError{CubridError{Code: -1,
+			Message: fmt.Sprintf("dial broker %s: %v", brokerAddr, err)}}
 	}
 	defer brokerConn.Close()
 
@@ -47,28 +48,30 @@ func (c *conn) connect() error {
 		return err
 	}
 
-	// Step 2: receive redirected port (4 bytes).
+	// Step 2: receive the redirected CAS port (4 bytes).
 	portBuf := make([]byte, 4)
 	if _, err = io.ReadFull(brokerConn, portBuf); err != nil {
 		return err
 	}
 	newPort := int(int32(binary.BigEndian.Uint32(portBuf)))
 	if newPort < 0 {
-		return &OperationalError{CubridError{Code: newPort, Message: "broker rejected connection"}}
+		return &OperationalError{CubridError{Code: newPort,
+			Message: "broker rejected connection"}}
 	}
 
 	// Step 3: connect to the CAS port returned by the broker.
 	casAddr := fmt.Sprintf("%s:%d", c.host, newPort)
 	c.socket, err = net.DialTimeout("tcp", casAddr, c.timeout)
 	if err != nil {
-		return &OperationalError{CubridError{Code: -1, Message: fmt.Sprintf("dial CAS %s: %v", casAddr, err)}}
+		return &OperationalError{CubridError{Code: -1,
+			Message: fmt.Sprintf("dial CAS %s: %v", casAddr, err)}}
 	}
 
 	if c.timeout > 0 {
 		c.socket.SetDeadline(time.Now().Add(c.timeout))
 	}
 
-	// Step 4: send OpenDatabase request (628 bytes, no framing header).
+	// Step 4: send OpenDatabase (628 bytes, no framing header).
 	if _, err = c.socket.Write(WriteOpenDatabase(c.database, c.user, c.password)); err != nil {
 		return err
 	}
@@ -85,10 +88,11 @@ func (c *conn) connect() error {
 	c.casInfo = res.CASInfo
 	c.protoVer = res.ProtocolVersion
 
-	// Clear deadline after successful connect.
 	c.socket.SetDeadline(time.Time{})
 	return nil
 }
+
+// ─── Low-level I/O ────────────────────────────────────────────────────────────
 
 // send writes all bytes to the socket.
 func (c *conn) send(data []byte) error {
@@ -96,8 +100,7 @@ func (c *conn) send(data []byte) error {
 	return err
 }
 
-// recv reads a length-framed response from the socket.
-// It reads a 4-byte DATA_LENGTH header, then reads exactly that many bytes.
+// recv reads a length-framed response: 4-byte DATA_LENGTH then that many bytes.
 func (c *conn) recv() ([]byte, error) {
 	lenBuf := make([]byte, SizeDataLength)
 	if _, err := io.ReadFull(c.socket, lenBuf); err != nil {
@@ -120,25 +123,10 @@ func (c *conn) sendAndRecv(data []byte) ([]byte, error) {
 	return c.recv()
 }
 
-// execSQL runs sql (with pre-interpolated arguments) against the server.
-func (c *conn) execSQL(sql string) (*PrepareAndExecuteResult, error) {
-	req := WritePrepareAndExecute(sql, c.autoCommit, c.casInfo)
-	resp, err := c.sendAndRecv(req)
-	if err != nil {
-		return nil, err
-	}
-	res, err := ParsePrepareAndExecute(resp, c.protoVer)
-	if err != nil {
-		return nil, err
-	}
-	// Keep CAS info updated from response header.
-	if len(resp) >= SizeCASInfo {
-		copy(c.casInfo[:], resp[:SizeCASInfo])
-	}
-	return res, nil
-}
+// ─── Internal helpers ─────────────────────────────────────────────────────────
 
-// closeQueryHandle releases the server-side query handle.
+// closeQueryHandle sends FC=6 to release a server-side handle.
+// Errors are silently ignored (best-effort cleanup).
 func (c *conn) closeQueryHandle(qh int) {
 	req := WriteCloseReqHandle(qh, c.casInfo)
 	resp, err := c.sendAndRecv(req)
@@ -148,22 +136,78 @@ func (c *conn) closeQueryHandle(qh int) {
 	_ = ParseSimpleResponse(resp)
 }
 
-// ─── driver.Conn ─────────────────────────────────────────────────────────────
+// execSQL runs a complete SQL string via PrepareAndExecute (FC=41).
+// Used internally for one-shot queries (e.g. SELECT LAST_INSERT_ID()).
+func (c *conn) execSQL(sql string) (*PrepareAndExecuteResult, error) {
+	req := WritePrepareAndExecute(sql, c.autoCommit, c.casInfo)
+	resp, err := c.sendAndRecv(req)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePrepareAndExecute(resp, c.protoVer)
+}
 
-// Prepare returns a prepared statement.
+// fetchLastInsertID retrieves the last auto-generated ID via FC=40.
+// Called by stmt.Exec() after a successful INSERT.
+func (c *conn) fetchLastInsertID() int64 {
+	req := WriteGetLastInsertId(c.casInfo)
+	resp, err := c.sendAndRecv(req)
+	if err != nil {
+		return 0
+	}
+	idStr, err := ParseGetLastInsertId(resp)
+	if err != nil || idStr == "" {
+		return 0
+	}
+	var n int64
+	for _, ch := range idStr {
+		if ch >= '0' && ch <= '9' {
+			n = n*10 + int64(ch-'0')
+		} else {
+			break
+		}
+	}
+	return n
+}
+
+// ─── driver.Conn ──────────────────────────────────────────────────────────────
+
+// Prepare sends the SQL to the server (FC=2) and returns a reusable Stmt.
+// The server validates the SQL and returns a query handle, statement type,
+// bind-parameter count, and column metadata.
 func (c *conn) Prepare(query string) (driver.Stmt, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	if c.closed {
 		return nil, driver.ErrBadConn
 	}
-	return &stmt{conn: c, query: query}, nil
+
+	req := WritePrepare(query, c.autoCommit, c.casInfo)
+	resp, err := c.sendAndRecv(req)
+	if err != nil {
+		return nil, err
+	}
+	res, err := ParsePrepare(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &stmt{
+		conn:        c,
+		query:       query,
+		queryHandle: res.QueryHandle,
+		stmtType:    res.StatementType,
+		bindCount:   res.BindCount,
+		columns:     res.Columns,
+	}, nil
 }
 
-// Close closes the connection.
+// Close gracefully disconnects from the CAS broker.
 func (c *conn) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	if c.closed {
 		return nil
 	}
@@ -176,10 +220,11 @@ func (c *conn) Close() error {
 	return nil
 }
 
-// Begin starts a transaction (auto-commit off).
+// Begin starts a transaction (disables auto-commit for this connection).
 func (c *conn) Begin() (driver.Tx, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	if c.closed {
 		return nil, driver.ErrBadConn
 	}
@@ -187,10 +232,11 @@ func (c *conn) Begin() (driver.Tx, error) {
 	return &tx{conn: c}, nil
 }
 
-// Ping verifies the connection is alive.
+// Ping verifies the connection is still alive.
 func (c *conn) Ping() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	if c.closed {
 		return driver.ErrBadConn
 	}
@@ -207,6 +253,7 @@ func (c *conn) Ping() error {
 func (c *conn) ServerVersion() (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	req := WriteGetDbVersion(true, c.casInfo)
 	resp, err := c.sendAndRecv(req)
 	if err != nil {

@@ -6,6 +6,12 @@ import (
 )
 
 // rows implements driver.Rows and iterates over a CUBRID result set.
+//
+// closeHandle controls whether Close() sends FC=6 (CloseReqHandle).
+// When rows are returned by stmt.Query(), closeHandle is false because
+// the handle belongs to the stmt and will be closed by stmt.Close().
+// When rows are the sole owner of a handle (e.g. from a one-shot execSQL),
+// closeHandle should be true.
 type rows struct {
 	conn         *conn
 	queryHandle  int
@@ -18,6 +24,7 @@ type rows struct {
 	exhausted    bool
 	fetchSize    int
 	closed       bool
+	closeHandle  bool // whether Close() should send FC=6
 }
 
 // Columns returns the column names.
@@ -29,13 +36,16 @@ func (r *rows) Columns() []string {
 	return names
 }
 
-// Close releases the server-side query handle.
+// Close marks the rows as exhausted.
+// FC=6 (CloseReqHandle) is only sent when closeHandle is true — that is,
+// when this rows value is the sole owner of the server-side handle.
+// Normally the handle is owned by the parent stmt and closed by stmt.Close().
 func (r *rows) Close() error {
 	if r.closed {
 		return nil
 	}
 	r.closed = true
-	if r.queryHandle > 0 {
+	if r.closeHandle && r.queryHandle > 0 {
 		r.conn.closeQueryHandle(r.queryHandle)
 		r.queryHandle = 0
 	}
