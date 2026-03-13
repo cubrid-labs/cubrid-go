@@ -1,16 +1,12 @@
 # cubrid-go
 
-<!-- BADGES:START -->
+**Pure Go database driver for CUBRID** — `database/sql` interface + GORM dialector, no CGO required.
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/cubrid-labs/cubrid-go.svg)](https://pkg.go.dev/github.com/cubrid-labs/cubrid-go)
 [![Go 1.21+](https://img.shields.io/badge/go-1.21%2B-blue.svg)](https://go.dev)
 [![license](https://img.shields.io/github/license/cubrid-labs/cubrid-go)](https://github.com/cubrid-labs/cubrid-go/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/cubrid-labs/cubrid-go)](https://github.com/cubrid-labs/cubrid-go)
 <!-- BADGES:END -->
-
-
-Pure-Go CUBRID database driver for Go's `database/sql` package and [GORM](https://gorm.io).
-
-Ported from [pycubrid](https://github.com/cubrid-labs/pycubrid) — no CGO, no native libraries required.
 
 ## Installation
 
@@ -137,6 +133,49 @@ The two-step connection sequence is:
 
 All subsequent requests use the `PREPARE_AND_EXECUTE` (function code 41) combined
 packet, and large result sets are streamed back via `FETCH` (function code 8).
+
+## FAQ
+
+### How do I connect to CUBRID with Go?
+
+```go
+import (
+    "database/sql"
+    _ "github.com/cubrid-labs/cubrid-go"
+)
+db, err := sql.Open("cubrid", "cubrid://dba:@localhost:33000/demodb")
+```
+
+### How do I use CUBRID with GORM?
+
+```go
+import (
+    "gorm.io/gorm"
+    cubrid "github.com/cubrid-labs/cubrid-go/dialector"
+)
+db, err := gorm.Open(cubrid.Open("cubrid://dba:@localhost:33000/demodb"), &gorm.Config{})
+```
+
+### Does cubrid-go require CGO?
+
+No. cubrid-go is a pure Go implementation that speaks the CUBRID CAS protocol directly over TCP. No shared libraries or CGO needed.
+
+### What Go version is required?
+
+Go 1.21 or later.
+
+### Does cubrid-go support connection pooling?
+
+Yes, via Go's standard `database/sql` package. Configure with `db.SetMaxOpenConns()`, `db.SetMaxIdleConns()`, and `db.SetConnMaxLifetime()`.
+
+### Does cubrid-go support transactions?
+
+Yes. Use `db.Begin()` to start a transaction, then `tx.Commit()` or `tx.Rollback()`.
+
+### Does GORM AutoMigrate work with CUBRID?
+
+Yes. The GORM dialector supports `AutoMigrate` for creating and updating table schemas.
+
 
 ## License
 
