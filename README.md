@@ -1,5 +1,13 @@
 # cubrid-go
 
+<!-- BADGES:START -->
+[![Go Reference](https://pkg.go.dev/badge/github.com/cubrid-labs/cubrid-go.svg)](https://pkg.go.dev/github.com/cubrid-labs/cubrid-go)
+[![Go 1.21+](https://img.shields.io/badge/go-1.21%2B-blue.svg)](https://go.dev)
+[![license](https://img.shields.io/github/license/cubrid-labs/cubrid-go)](https://github.com/cubrid-labs/cubrid-go/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/cubrid-labs/cubrid-go)](https://github.com/cubrid-labs/cubrid-go)
+<!-- BADGES:END -->
+
+
 Pure-Go CUBRID database driver for Go's `database/sql` package and [GORM](https://gorm.io).
 
 Ported from [pycubrid](https://github.com/cubrid-labs/pycubrid) — no CGO, no native libraries required.
