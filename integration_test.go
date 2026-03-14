@@ -8,6 +8,9 @@ import (
 
 // TestDatabaseSQLIntegration tests the full database/sql driver flow.
 func TestDatabaseSQLIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	db, err := sql.Open("cubrid", "cubrid://dba:@localhost:33000/testdb?autocommit=true")
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
