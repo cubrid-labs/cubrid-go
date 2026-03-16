@@ -32,7 +32,7 @@ type conn struct {
 // connect performs the two-step CUBRID broker handshake and opens the database.
 func (c *conn) connect() error {
 	brokerAddr := fmt.Sprintf("%s:%d", c.host, c.port)
-	brokerConn, err := net.DialTimeout("tcp", brokerAddr, c.timeout)
+	brokerConn, err := net.DialTimeout("tcp", brokerAddr, c.timeout) // #nosec G102 -- DB driver must dial user-provided broker address
 	if err != nil {
 		return &OperationalError{CubridError{Code: -1,
 			Message: fmt.Sprintf("dial broker %s: %v", brokerAddr, err)}}
@@ -65,7 +65,7 @@ func (c *conn) connect() error {
 	if newPort > 0 {
 		brokerConn.Close()
 		casAddr := fmt.Sprintf("%s:%d", c.host, newPort)
-		c.socket, err = net.DialTimeout("tcp", casAddr, c.timeout)
+		c.socket, err = net.DialTimeout("tcp", casAddr, c.timeout) // #nosec G102 -- DB driver must dial broker-redirected CAS address
 		if err != nil {
 			return &OperationalError{CubridError{Code: -1,
 				Message: fmt.Sprintf("dial CAS %s: %v", casAddr, err)}}
@@ -142,9 +142,9 @@ func (c *conn) closeQueryHandle(qh int) {
 	req := WriteCloseReqHandle(qh, c.casInfo)
 	resp, err := c.sendAndRecv(req)
 	if err != nil {
-		return
+		return // best-effort: ignore network errors during cleanup
 	}
-	_ = ParseSimpleResponse(resp)
+	_ = ParseSimpleResponse(resp) // #nosec G104 -- best-effort cleanup; result is intentionally discarded
 }
 
 // execSQL runs a complete SQL string via PrepareAndExecute (FC=41).
@@ -227,7 +227,7 @@ func (c *conn) Close() error {
 	c.closed = true
 	if c.socket != nil {
 		req := WriteConClose(c.casInfo)
-		c.socket.Write(req) // best-effort
+		c.socket.Write(req) // #nosec G104 -- best-effort write during connection close; errors are intentionally ignored
 		c.socket.Close()
 	}
 	return nil

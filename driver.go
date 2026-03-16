@@ -100,7 +100,7 @@ func parseDSN(dsn string) (*config, error) {
 
 	if u.User != nil {
 		cfg.user = u.User.Username()
-		cfg.password, _ = u.User.Password()
+		cfg.password, _ = u.User.Password() // #nosec G104 -- blank identifier is intentional: Password() returns ("", false) when unset
 	}
 
 	q := u.Query()
