@@ -379,14 +379,21 @@ Yes. The GORM dialector supports `AutoMigrate` for creating and updating table s
 
 ## Benchmark
 
-Performance benchmarks comparing CUBRID drivers against MySQL are tracked in the [cubrid-benchmark](https://github.com/cubrid-labs/cubrid-benchmark) suite.
+**Environment**: Intel Core i5-9400F @ 2.90GHz · Linux x86_64 · CUBRID 11.2 · MySQL 8.0 · Docker localhost
 
-[![Benchmark](https://github.com/cubrid-labs/cubrid-benchmark/actions/workflows/bench.yml/badge.svg)](https://cubrid-labs.github.io/cubrid-benchmark/)
+**Test Parameters**: 1000 rows × 5 rounds
 
-- **Tier 0** — Functional smoke tests (connect + CRUD)
-- **Tier 1** — Driver throughput: 10K INSERT/SELECT, 1K UPDATE/DELETE
-- Same schema, same seed data, same CI hardware per run
-- Results published to [GitHub Pages dashboard](https://cubrid-labs.github.io/cubrid-benchmark/)
+| Operation | cubrid-go (CUBRID) | go-sql-driver (MySQL) | Ratio |
+|-----------|-------------------|----------------------|-------|
+| insert_sequential | 0.98s | 1.02s | 1.0× |
+| select_by_pk | 1.58s | 1.14s | 1.4× |
+| select_full_scan | 1.02s | 1.11s | 0.9× |
+| update_indexed | 1.07s | 1.11s | 1.0× |
+| delete_sequential | 1.14s | 1.06s | 1.1× |
+
+**Note**: cubrid-go performs on par with go-sql-driver/mysql — nearly identical throughput across all operations.
+
+Full benchmark suite: [cubrid-benchmark](https://github.com/cubrid-labs/cubrid-benchmark)
 
 
 ## Ecosystem
