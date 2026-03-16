@@ -152,6 +152,69 @@ cubrid://[user[:password]]@host[:port]/database[?autocommit=true&timeout=30s]
 "cubrid://dba:@localhost:33000/demodb?timeout=60s"
 ```
 
+## Connection Pooling
+
+`cubrid-go` uses Go's standard `database/sql` pool, so the usual pool tuning APIs work as expected.
+
+```go
+package main
+
+import (
+    "context"
+    "database/sql"
+    "log"
+    "time"
+
+    _ "github.com/cubrid-labs/cubrid-go"
+)
+
+func main() {
+    db, err := sql.Open("cubrid", "cubrid://dba:@localhost:33000/demodb")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
+
+    // Configure the shared connection pool.
+    db.SetMaxOpenConns(25)
+    db.SetMaxIdleConns(5)
+    db.SetConnMaxLifetime(5 * time.Minute)
+    db.SetConnMaxIdleTime(1 * time.Minute)
+
+    // Verify that the broker is reachable before serving traffic.
+    ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+    defer cancel()
+
+    if err := db.PingContext(ctx); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+### Pool settings
+
+- `SetMaxOpenConns(25)`: caps the total number of open connections. Start with a conservative number and scale up only if your broker and workload need it.
+- `SetMaxIdleConns(5)`: keeps a small number of warm idle connections ready for bursts without holding on to the full pool.
+- `SetConnMaxLifetime(5 * time.Minute)`: rotates long-lived connections so stale sessions do not accumulate forever.
+- `SetConnMaxIdleTime(1 * time.Minute)`: closes connections that have been idle for too long, which is useful for spiky traffic.
+
+### Recommended starting point
+
+For a typical web service, a good baseline is:
+
+- `MaxOpenConns`: `10` to `25`
+- `MaxIdleConns`: `2` to `5`
+- `ConnMaxLifetime`: `5m` to `30m`
+- `ConnMaxIdleTime`: `1m` to `5m`
+
+Measure under production-like load and adjust from there. If requests begin queueing on the Go side, raise `MaxOpenConns` carefully. If the database is saturated, lower it.
+
+### CUBRID-specific notes
+
+- The pool limit should stay below the available CUBRID broker worker capacity. Setting `MaxOpenConns` higher than the broker can actually serve only shifts contention downstream.
+- `PingContext()` is a good readiness or startup check because it fails fast when the broker is unavailable or the DSN is invalid.
+- If your deployment has multiple application instances, size the pool per instance, not just per service. For example, `25` open connections across `4` replicas can become `100` broker sessions.
+
 ## Supported Features
 
 | Feature | Status | Notes |
@@ -304,7 +367,7 @@ Go 1.21 or later.
 
 ### Does cubrid-go support connection pooling?
 
-Yes, via Go's standard `database/sql` package. Configure with `db.SetMaxOpenConns()`, `db.SetMaxIdleConns()`, and `db.SetConnMaxLifetime()`.
+Yes. See the [Connection Pooling](#connection-pooling) section for a production-oriented example with `PingContext()` and recommended starting values.
 
 ### Does cubrid-go support transactions?
 
