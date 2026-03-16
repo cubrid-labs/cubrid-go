@@ -162,7 +162,15 @@ func (c *conn) execSQL(sql string) (*PrepareAndExecuteResult, error) {
 // FC=40 (GET_LAST_INSERT_ID) is unreliable; using SELECT LAST_INSERT_ID() instead.
 func (c *conn) fetchLastInsertID() int64 {
 	res, err := c.execSQL("SELECT LAST_INSERT_ID()")
-	if err != nil || len(res.Rows) == 0 || len(res.Rows[0]) == 0 {
+	if err != nil {
+		return 0
+	}
+	// FC=41 allocates a server-side query handle; close it immediately
+	// to avoid exhausting the CAS query-entry pool (default limit: 100).
+	if res.QueryHandle > 0 {
+		defer c.closeQueryHandle(res.QueryHandle)
+	}
+	if len(res.Rows) == 0 || len(res.Rows[0]) == 0 {
 		return 0
 	}
 	switch v := res.Rows[0][0].(type) {

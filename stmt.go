@@ -62,6 +62,11 @@ func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
 		if err != nil {
 			return nil, err
 		}
+		// FC=41 allocates a server-side query handle; close it immediately
+		// to avoid exhausting the CAS query-entry pool (default limit: 100).
+		if paeRes.QueryHandle > 0 {
+			s.conn.closeQueryHandle(paeRes.QueryHandle)
+		}
 	} else {
 		// No args: use the prepared handle via FC=3.
 		req := WriteExecute(s.queryHandle, s.stmtType, nil, s.conn.autoCommit, s.conn.casInfo)
