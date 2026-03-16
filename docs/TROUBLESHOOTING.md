@@ -15,7 +15,7 @@ Common issues and solutions when using cubrid-go.
   - [Unsupported value type](#unsupported-value-type)
   - [LastInsertId returns 0](#lastinsertid-returns-0)
   - [Numeric precision loss](#numeric-precision-loss)
-  - [Date/time values returned as strings](#datetime-values-returned-as-strings)
+- [Date/time values are returned as time.Time (UTC)](#datetime-values-are-returned-as-timetime-utc)
 - [Transaction Issues](#transaction-issues)
   - [DDL statements auto-commit](#ddl-statements-auto-commit)
   - [Connection left in non-autocommit mode](#connection-left-in-non-autocommit-mode)
@@ -194,19 +194,14 @@ db.QueryRow("SELECT CAST(price AS VARCHAR) FROM products WHERE id = ?", 1).Scan(
 // Parse priceStr with decimal library for exact arithmetic
 ```
 
-### Date/time values returned as strings
+### Date/time values are returned as time.Time (UTC)
 
-CUBRID `DATE`, `TIME`, `TIMESTAMP`, and `DATETIME` columns are returned as `string`, not `time.Time`:
+CUBRID `DATE`, `TIME`, `TIMESTAMP`, and `DATETIME` columns are returned as `time.Time`, and the driver normalizes them to UTC:
 
 ```go
-var dateStr string
-db.QueryRow("SELECT event_date FROM events WHERE id = 1").Scan(&dateStr)
-// dateStr = "2024-01-15" for DATE
-// dateStr = "09:30:00" for TIME
-// dateStr = "2024-01-15 09:30:00.000" for DATETIME
-
-// Parse manually
-t, _ := time.Parse("2006-01-02", dateStr)
+var eventTime time.Time
+db.QueryRow("SELECT event_date FROM events WHERE id = 1").Scan(&eventTime)
+// eventTime.Location() == time.UTC
 ```
 
 ---

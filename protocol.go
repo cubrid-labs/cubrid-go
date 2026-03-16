@@ -645,6 +645,7 @@ func encodeOneParam(w *PacketWriter, arg driver.Value) {
 		w.writeByte(TypeVarBit)
 		w.writeRawBytes(v)
 	case time.Time:
+		v = v.UTC()
 		w.writeInt(1 + SizeDatetime) // type + 7×int16
 		w.writeByte(TypeDatetime)
 		w.writeShort(int16(v.Year()))

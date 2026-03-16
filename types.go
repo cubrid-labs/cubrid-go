@@ -12,30 +12,84 @@ import (
 // This is used only for logging / GORM's Explain method — NOT for actual
 // query execution, which sends typed bind parameters over the wire (FC=3).
 func InterpolateArgs(sql string, args []driver.Value) (string, error) {
-	if len(args) == 0 {
+	placeholders := findBindPlaceholders(sql)
+	if len(placeholders) != len(args) {
+		return "", fmt.Errorf(
+			"cubrid: expected %d bind args, got %d",
+			len(placeholders), len(args),
+		)
+	}
+	if len(placeholders) == 0 {
 		return sql, nil
 	}
 
-	parts := strings.Split(sql, "?")
-	if len(parts)-1 != len(args) {
-		return "", fmt.Errorf(
-			"cubrid: expected %d bind args, got %d",
-			len(parts)-1, len(args),
-		)
-	}
-
 	var sb strings.Builder
-	for i, part := range parts {
-		sb.WriteString(part)
-		if i < len(args) {
-			formatted, err := FormatValue(args[i])
-			if err != nil {
-				return "", err
+	prev := 0
+	for i, pos := range placeholders {
+		sb.WriteString(sql[prev:pos])
+		formatted, err := FormatValue(args[i])
+		if err != nil {
+			return "", err
+		}
+		sb.WriteString(formatted)
+		prev = pos + 1
+	}
+	sb.WriteString(sql[prev:])
+	return sb.String(), nil
+}
+
+func findBindPlaceholders(sql string) []int {
+	const (
+		scanNormal = iota
+		scanSingleQuote
+		scanBlockComment
+		scanLineComment
+	)
+
+	state := scanNormal
+	positions := make([]int, 0, 8)
+
+	for i := 0; i < len(sql); i++ {
+		ch := sql[i]
+		switch state {
+		case scanNormal:
+			switch ch {
+			case '\'':
+				state = scanSingleQuote
+			case '/':
+				if i+1 < len(sql) && sql[i+1] == '*' {
+					state = scanBlockComment
+					i++
+				}
+			case '-':
+				if i+1 < len(sql) && sql[i+1] == '-' {
+					state = scanLineComment
+					i++
+				}
+			case '?':
+				positions = append(positions, i)
 			}
-			sb.WriteString(formatted)
+		case scanSingleQuote:
+			if ch == '\'' {
+				if i+1 < len(sql) && sql[i+1] == '\'' {
+					i++
+					continue
+				}
+				state = scanNormal
+			}
+		case scanBlockComment:
+			if ch == '*' && i+1 < len(sql) && sql[i+1] == '/' {
+				state = scanNormal
+				i++
+			}
+		case scanLineComment:
+			if ch == '\n' {
+				state = scanNormal
+			}
 		}
 	}
-	return sb.String(), nil
+
+	return positions
 }
 
 // FormatValue converts a driver.Value to a CUBRID SQL literal string.
@@ -59,6 +113,7 @@ func FormatValue(v driver.Value) (string, error) {
 	case []byte:
 		return "X'" + hexEncode(val) + "'", nil
 	case time.Time:
+		val = val.UTC()
 		ms := val.Nanosecond() / 1e6
 		return fmt.Sprintf("DATETIME'%s.%03d'", val.Format("2006-01-02 15:04:05"), ms), nil
 	default:

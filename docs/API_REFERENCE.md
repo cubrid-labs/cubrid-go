@@ -368,9 +368,9 @@ When reading result rows, the driver returns these Go types:
 | `FLOAT`, `DOUBLE`, `MONETARY` | `float64` | |
 | `NUMERIC` | `string` | Arbitrary precision preserved |
 | `CHAR`, `VARCHAR`, `NCHAR`, `NVARCHAR`, `STRING` | `string` | |
-| `DATE` | `string` | Format: `YYYY-MM-DD` |
-| `TIME` | `string` | Format: `HH:MM:SS` |
-| `TIMESTAMP`, `DATETIME` | `string` | Format depends on server |
+| `DATE` | `time.Time` | Normalized to UTC |
+| `TIME` | `time.Time` | Normalized to UTC |
+| `TIMESTAMP`, `DATETIME` | `time.Time` | Normalized to UTC |
 | `BIT`, `BIT VARYING` | `[]byte` | |
 | `BLOB`, `CLOB` | `[]byte` | Raw bytes only |
 | `SET`, `MULTISET`, `SEQUENCE` | `string` | Server-formatted representation |

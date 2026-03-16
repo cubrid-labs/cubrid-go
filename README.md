@@ -256,7 +256,7 @@ Measure under production-like load and adjust from there. If requests begin queu
 | `FLOAT`, `DOUBLE`, `MONETARY` | `float64` |
 | `NUMERIC` | `string` |
 | `CHAR`, `VARCHAR`, `STRING` | `string` |
-| `DATE`, `TIME`, `DATETIME`, `TIMESTAMP` | `string` |
+| `DATE`, `TIME`, `DATETIME`, `TIMESTAMP` | `time.Time` (UTC) |
 | `BIT`, `BIT VARYING`, `BLOB`, `CLOB` | `[]byte` |
 | `SET`, `MULTISET`, `SEQUENCE` | `string` |
 
