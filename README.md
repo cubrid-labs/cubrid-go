@@ -314,6 +314,18 @@ Yes. Use `db.Begin()` to start a transaction, then `tx.Commit()` or `tx.Rollback
 
 Yes. The GORM dialector supports `AutoMigrate` for creating and updating table schemas.
 
+## Benchmark
+
+Performance benchmarks comparing CUBRID drivers against MySQL are tracked in the [cubrid-benchmark](https://github.com/cubrid-labs/cubrid-benchmark) suite.
+
+[![Benchmark](https://github.com/cubrid-labs/cubrid-benchmark/actions/workflows/bench.yml/badge.svg)](https://cubrid-labs.github.io/cubrid-benchmark/)
+
+- **Tier 0** — Functional smoke tests (connect + CRUD)
+- **Tier 1** — Driver throughput: 10K INSERT/SELECT, 1K UPDATE/DELETE
+- Same schema, same seed data, same CI hardware per run
+- Results published to [GitHub Pages dashboard](https://cubrid-labs.github.io/cubrid-benchmark/)
+
+
 ## Ecosystem
 
 | Package | Description | Language |
