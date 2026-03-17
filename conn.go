@@ -1,6 +1,7 @@
 package cubrid
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
@@ -28,6 +29,10 @@ type conn struct {
 	autoCommit bool
 	closed     bool
 }
+
+var _ driver.QueryerContext = (*conn)(nil)
+var _ driver.ExecerContext = (*conn)(nil)
+var _ driver.ConnBeginTx = (*conn)(nil)
 
 // connect performs the two-step CUBRID broker handshake and opens the database.
 func (c *conn) connect() error {
@@ -132,6 +137,48 @@ func (c *conn) sendAndRecv(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return c.recv()
+}
+
+func namedValuesToValues(args []driver.NamedValue) ([]driver.Value, error) {
+	values := make([]driver.Value, len(args))
+	for i, arg := range args {
+		if arg.Name != "" {
+			return nil, fmt.Errorf("cubrid: named parameters are not supported: %s", arg.Name)
+		}
+		values[i] = arg.Value
+	}
+	return values, nil
+}
+
+func (c *conn) watchContextCancel(ctx context.Context) func() {
+	if c.socket == nil {
+		return func() {}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = c.socket.SetDeadline(time.Now())
+		case <-done:
+		}
+	}()
+
+	return func() { close(done) }
+}
+
+func (c *conn) applyContextDeadline(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.socket == nil {
+		return nil
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return nil
+	}
+	return c.socket.SetDeadline(deadline)
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -253,6 +300,28 @@ func (c *conn) Begin() (driver.Tx, error) {
 	return &tx{conn: c}, nil
 }
 
+func (c *conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return nil, driver.ErrBadConn
+	}
+	if err := c.applyContextDeadline(ctx); err != nil {
+		return nil, err
+	}
+	if c.socket != nil {
+		defer c.socket.SetDeadline(time.Time{})
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	_ = opts
+	c.autoCommit = false
+	return &tx{conn: c}, nil
+}
+
 // Ping verifies the connection is still alive.
 func (c *conn) Ping() error {
 	c.mu.Lock()
@@ -268,6 +337,126 @@ func (c *conn) Ping() error {
 	}
 	_, err = ParseGetDbVersion(resp)
 	return err
+}
+
+func (c *conn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return nil, driver.ErrBadConn
+	}
+	if err := c.applyContextDeadline(ctx); err != nil {
+		return nil, err
+	}
+	stopWatch := c.watchContextCancel(ctx)
+	defer stopWatch()
+	if c.socket != nil {
+		defer c.socket.SetDeadline(time.Time{})
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	values, err := namedValuesToValues(args)
+	if err != nil {
+		return nil, err
+	}
+
+	interpolatedSQL := query
+	if len(values) > 0 {
+		interpolatedSQL, err = InterpolateArgs(query, values)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	res, err := c.execSQL(interpolatedSQL)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	r := &rows{
+		conn:         c,
+		queryHandle:  res.QueryHandle,
+		columns:      res.Columns,
+		stmtType:     res.StatementType,
+		totalCount:   res.TotalTupleCount,
+		fetchedCount: len(res.Rows),
+		bufferedRows: res.Rows,
+		bufferOffset: 0,
+		exhausted:    res.TupleCount == 0 || len(res.Rows) >= res.TotalTupleCount,
+		fetchSize:    defaultFetchSize,
+		closeHandle:  res.QueryHandle > 0,
+	}
+
+	return r, nil
+}
+
+func (c *conn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return nil, driver.ErrBadConn
+	}
+	if err := c.applyContextDeadline(ctx); err != nil {
+		return nil, err
+	}
+	stopWatch := c.watchContextCancel(ctx)
+	defer stopWatch()
+	if c.socket != nil {
+		defer c.socket.SetDeadline(time.Time{})
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	values, err := namedValuesToValues(args)
+	if err != nil {
+		return nil, err
+	}
+
+	interpolatedSQL := query
+	if len(values) > 0 {
+		interpolatedSQL, err = InterpolateArgs(query, values)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	res, err := c.execSQL(interpolatedSQL)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	var affected int64
+	for _, info := range res.ResultInfos {
+		affected += int64(info.ResultCount)
+	}
+
+	var lastID int64
+	if res.StatementType == StmtInsert {
+		lastID = c.fetchLastInsertID()
+	}
+
+	if res.QueryHandle > 0 {
+		c.closeQueryHandle(res.QueryHandle)
+	}
+
+	return &result{lastInsertID: lastID, rowsAffected: affected}, nil
 }
 
 // ServerVersion returns the CUBRID engine version string.
