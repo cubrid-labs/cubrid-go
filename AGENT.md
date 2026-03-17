@@ -1,4 +1,4 @@
-# CLAUDE.md — cubrid-go development guide
+# AGENT.md — cubrid-go development guide
 
 ## Overview
 
@@ -66,8 +66,8 @@ Client                          CAS (new port)
 
 CAS function codes (defined in `constants.go`):
 
-| Constant                 | Value | Description                     |
-|--------------------------|-------|---------------------------------|
+| Constant                 | Value | Description                      |
+|--------------------------|-------|----------------------------------|
 | `FuncEndTran`            | 1     | Commit or rollback               |
 | `FuncPrepare`            | 2     | Prepare SQL statement            |
 | `FuncExecute`            | 3     | Execute prepared statement       |
@@ -125,10 +125,13 @@ after the initial handshake; CAS_INFO is embedded in the response body).
 type Driver struct{}
 
 // Error types
-type CubridError struct { Code int; Message string }
+type CubridError    struct { Code int; Message string }
 type IntegrityError  struct { CubridError }
 type ProgrammingError struct { CubridError }
 type OperationalError  struct { CubridError }
+
+// Version
+const Version = "0.0.1-dev"
 ```
 
 ## Running a Local CUBRID Server (Docker)
