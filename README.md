@@ -401,11 +401,13 @@ Full benchmark suite: [cubrid-benchmark](https://github.com/cubrid-labs/cubrid-b
 | Package | Description | Language |
 |:--------|:------------|:---------|
 | [cubrid-go](https://github.com/cubrid-labs/cubrid-go) | database/sql driver + GORM dialector | Go |
+| [gorm-cubrid](https://github.com/cubrid-labs/gorm-cubrid) | GORM dialect for CUBRID | Go |
 | [pycubrid](https://github.com/cubrid-labs/pycubrid) | PEP 249 DB-API 2.0 driver | Python |
 | [sqlalchemy-cubrid](https://github.com/cubrid-labs/sqlalchemy-cubrid) | SQLAlchemy 2.0 dialect | Python |
 | [cubrid-client](https://github.com/cubrid-labs/cubrid-client) | Modern TypeScript client | TypeScript |
 | [drizzle-cubrid](https://github.com/cubrid-labs/drizzle-cubrid) | Drizzle ORM dialect | TypeScript |
 | [cubrid-rs](https://github.com/cubrid-labs/cubrid-rs) | Native Rust database driver for CUBRID (sync + async, pure Rust) | Rust |
+| [sea-orm-cubrid](https://github.com/cubrid-labs/sea-orm-cubrid) | SeaORM backend for CUBRID | Rust |
 | [cubrid-cookbook](https://github.com/cubrid-labs/cubrid-cookbook) | Working examples for all platforms | Multi |
 
 ## License
