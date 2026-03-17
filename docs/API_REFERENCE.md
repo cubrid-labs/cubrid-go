@@ -528,24 +528,20 @@ fmt.Printf("%d products updated\n", affected)
 
 ### Connection Sequence
 
-```
-Client                           Broker (port 33000)           CAS
-  │                                 │                            │
-  ├── ClientInfoExchange (10 B) ──→ │                            │
-  │                                 │                            │
-  ← ─── CAS port (4 B) ─────────── │                            │
-  │                                 │                            │
-  ├── OpenDatabase (628 B) ──────────────────────────────────── → │
-  │                                                               │
-  ← ─── Session info ──────────────────────────────────────────── │
-  │                                                               │
-  ├── PrepareAndExecute (FC=41) ────────────────────────────── → │
-  │                                                               │
-  ← ─── Result set + initial rows ─────────────────────────────── │
-  │                                                               │
-  ├── Fetch (FC=8) ──────────────────────────────────────────── → │
-  │                                                               │
-  ← ─── More rows ────────────────────────────────────────────── │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Broker as Broker (port 33000)
+    participant CAS
+
+    Client->>Broker: ClientInfoExchange (10 B)
+    Broker-->>Client: CAS port (4 B)
+    Client->>CAS: OpenDatabase (628 B)
+    CAS-->>Client: Session info
+    Client->>CAS: PrepareAndExecute (FC=41)
+    CAS-->>Client: Result set + initial rows
+    Client->>CAS: Fetch (FC=8)
+    CAS-->>Client: More rows
 ```
 
 ### Wire Format

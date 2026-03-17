@@ -305,20 +305,27 @@ if errors.As(err, &integrityErr) {
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    A[Application] --> B[cubrid-go database/sql driver]
+    B --> C[CAS Protocol net.Conn]
+    C --> D[CUBRID Server]
 ```
-cubrid-go/
-├── constants.go    CAS protocol constants (function codes, data types)
-├── packet.go       PacketWriter / PacketReader — big-endian binary codec
-├── protocol.go     High-level packet builders and parsers
-├── errors.go       CubridError, IntegrityError, ProgrammingError, OperationalError
-├── types.go        FormatValue — Go → CUBRID type conversion
-├── conn.go         TCP connection + two-step broker handshake
-├── stmt.go         database/sql Stmt — PrepareAndExecute (FC=41)
-├── rows.go         database/sql Rows — lazy server-side cursor (FC=8)
-├── tx.go           database/sql Tx — COMMIT / ROLLBACK (FC=1)
-├── driver.go       Driver registration + DSN parser
-└── dialector/
-    └── cubrid.go   GORM Dialector + Migrator
+
+```mermaid
+flowchart TD
+    R[cubrid-go/] --> C1[constants.go\nCAS protocol constants function codes, data types]
+    R --> C2[packet.go\nPacketWriter / PacketReader big-endian binary codec]
+    R --> C3[protocol.go\nHigh-level packet builders and parsers]
+    R --> C4[errors.go\nCubridError, IntegrityError, ProgrammingError, OperationalError]
+    R --> C5[types.go\nFormatValue Go to CUBRID type conversion]
+    R --> C6[conn.go\nTCP connection + two-step broker handshake]
+    R --> C7[stmt.go\ndatabase/sql Stmt PrepareAndExecute FC=41]
+    R --> C8[rows.go\ndatabase/sql Rows lazy server-side cursor FC=8]
+    R --> C9[tx.go\ndatabase/sql Tx COMMIT / ROLLBACK FC=1]
+    R --> C10[driver.go\nDriver registration + DSN parser]
+    R --> D[dialector/]
+    D --> D1[cubrid.go\nGORM Dialector + Migrator]
 ```
 
 ## Protocol Notes

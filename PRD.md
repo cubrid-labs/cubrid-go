@@ -42,20 +42,20 @@ A complete pure Go implementation of the CUBRID CAS protocol:
 
 ### 2.1 Module Structure
 
-```
-cubrid-go/
-├── constants.go        # CAS protocol constants (function codes, data types)
-├── packet.go           # PacketWriter / PacketReader — big-endian binary codec
-├── protocol.go         # High-level packet builders and parsers
-├── errors.go           # CubridError, IntegrityError, ProgrammingError
-├── types.go            # Client-side parameter interpolation
-├── conn.go             # TCP connection + broker handshake
-├── stmt.go             # database/sql Stmt — PrepareAndExecute
-├── rows.go             # database/sql Rows — lazy server-side cursor
-├── tx.go               # database/sql Tx — COMMIT / ROLLBACK
-├── driver.go           # Driver registration + DSN parser
-└── dialector/
-    └── cubrid.go       # GORM Dialector + Migrator
+```mermaid
+flowchart TD
+    R[cubrid-go/] --> C1[constants.go\nCAS protocol constants function codes, data types]
+    R --> C2[packet.go\nPacketWriter / PacketReader big-endian binary codec]
+    R --> C3[protocol.go\nHigh-level packet builders and parsers]
+    R --> C4[errors.go\nCubridError, IntegrityError, ProgrammingError]
+    R --> C5[types.go\nClient-side parameter interpolation]
+    R --> C6[conn.go\nTCP connection + broker handshake]
+    R --> C7[stmt.go\ndatabase/sql Stmt PrepareAndExecute]
+    R --> C8[rows.go\ndatabase/sql Rows lazy server-side cursor]
+    R --> C9[tx.go\ndatabase/sql Tx COMMIT / ROLLBACK]
+    R --> C10[driver.go\nDriver registration + DSN parser]
+    R --> D[dialector/]
+    D --> D1[cubrid.go\nGORM Dialector + Migrator]
 ```
 
 ### 2.2 Dependency Matrix
@@ -227,18 +227,18 @@ it easier to test together.
 
 cubrid-go is the Go arm of the cubrid-labs ecosystem:
 
-```
-cubrid-labs ecosystem
-├── Python
-│   ├── pycubrid (DB-API 2.0 driver)
-│   └── sqlalchemy-cubrid (SQLAlchemy 2.0 dialect)
-├── TypeScript
-│   ├── cubrid-client (TypeScript driver)
-│   └── drizzle-cubrid (Drizzle ORM dialect)
-├── Go
-│   ├── cubrid-go (database/sql driver)     ← this project
-│   └── cubrid-go/dialector (GORM dialector)
-└── cubrid-cookbook (runnable examples for all languages)
+```mermaid
+flowchart TD
+    E[cubrid-labs ecosystem] --> P[Python]
+    P --> P1[pycubrid DB-API 2.0 driver]
+    P --> P2[sqlalchemy-cubrid SQLAlchemy 2.0 dialect]
+    E --> T[TypeScript]
+    T --> T1[cubrid-client TypeScript driver]
+    T --> T2[drizzle-cubrid Drizzle ORM dialect]
+    E --> G[Go]
+    G --> G1[cubrid-go database/sql driver this project]
+    G --> G2[cubrid-go/dialector GORM dialector]
+    E --> C[cubrid-cookbook runnable examples for all languages]
 ```
 
 ---
