@@ -2,8 +2,11 @@
 
 **Pure Go database driver for CUBRID** — `database/sql` interface + GORM dialector, no CGO required.
 
+<!-- BADGES:START -->
 [![Go Reference](https://pkg.go.dev/badge/github.com/cubrid-labs/cubrid-go.svg)](https://pkg.go.dev/github.com/cubrid-labs/cubrid-go)
-[![Go 1.21+](https://img.shields.io/badge/go-1.21%2B-blue.svg)](https://go.dev)
+[![v0.2.1](https://img.shields.io/badge/version-v0.2.1-blue.svg)](https://github.com/cubrid-labs/cubrid-go/releases)
+[![Go 1.21+](https://img.shields.io/badge/go-1.21%2B-00ADD8.svg)](https://go.dev)
+[![CI](https://github.com/cubrid-labs/cubrid-go/actions/workflows/ci.yml/badge.svg)](https://github.com/cubrid-labs/cubrid-go/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/cubrid-labs/cubrid-go)](https://github.com/cubrid-labs/cubrid-go/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/cubrid-labs/cubrid-go)](https://github.com/cubrid-labs/cubrid-go)
 <!-- BADGES:END -->
