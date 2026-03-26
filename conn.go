@@ -164,7 +164,7 @@ func (c *conn) checkReconnect() error {
 		return driver.ErrBadConn
 	}
 	if c.casInfo[0] == casInfoStatusInactive {
-		c.socket.Close()
+		_ = c.socket.Close()
 		c.socket = nil
 		return c.connect()
 	}
