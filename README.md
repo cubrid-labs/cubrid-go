@@ -387,38 +387,12 @@ Yes. Use `db.Begin()` to start a transaction, then `tx.Commit()` or `tx.Rollback
 
 Yes. The GORM dialector supports `AutoMigrate` for creating and updating table schemas.
 
-## Benchmark
-
-**Environment**: Intel Core i5-9400F @ 2.90GHz · Linux x86_64 · CUBRID 11.2 · MySQL 8.0 · Docker localhost
-
-**Test Parameters**: 1000 rows × 5 rounds
-
-| Operation | cubrid-go (CUBRID) | go-sql-driver (MySQL) | Ratio |
-|-----------|-------------------|----------------------|-------|
-| insert_sequential | 0.98s | 1.02s | 1.0× |
-| select_by_pk | 1.58s | 1.14s | 1.4× |
-| select_full_scan | 1.02s | 1.11s | 0.9× |
-| update_indexed | 1.07s | 1.11s | 1.0× |
-| delete_sequential | 1.14s | 1.06s | 1.1× |
-
-**Note**: cubrid-go performs on par with go-sql-driver/mysql — nearly identical throughput across all operations.
-
-Full benchmark suite: [cubrid-benchmark](https://github.com/cubrid-labs/cubrid-benchmark)
-
-
 ## Ecosystem
 
-| Package | Description | Language |
-|:--------|:------------|:---------|
-| [cubrid-go](https://github.com/cubrid-labs/cubrid-go) | database/sql driver + GORM dialector | Go |
-| [gorm-cubrid](https://github.com/cubrid-labs/gorm-cubrid) | GORM dialect for CUBRID | Go |
-| [pycubrid](https://github.com/cubrid-labs/pycubrid) | PEP 249 DB-API 2.0 driver | Python |
-| [sqlalchemy-cubrid](https://github.com/cubrid-labs/sqlalchemy-cubrid) | SQLAlchemy 2.0 dialect | Python |
-| [cubrid-client](https://github.com/cubrid-labs/cubrid-client) | Modern TypeScript client | TypeScript |
-| [drizzle-cubrid](https://github.com/cubrid-labs/drizzle-cubrid) | Drizzle ORM dialect | TypeScript |
-| [cubrid-rs](https://github.com/cubrid-labs/cubrid-rs) | Native Rust database driver for CUBRID (sync + async, pure Rust) | Rust |
-| [sea-orm-cubrid](https://github.com/cubrid-labs/sea-orm-cubrid) | SeaORM backend for CUBRID | Rust |
-| [cubrid-cookbook](https://github.com/cubrid-labs/cubrid-cookbook) | Working examples for all platforms | Multi |
+| Package | Description |
+|:--------|:------------|
+| [cubrid-go](https://github.com/cubrid-labs/cubrid-go) | database/sql driver + GORM dialector |
+| [gorm-cubrid](https://github.com/cubrid-labs/gorm-cubrid) | GORM dialect for CUBRID |
 
 ## Roadmap
 
